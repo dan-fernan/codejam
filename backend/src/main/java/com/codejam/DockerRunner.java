@@ -106,25 +106,4 @@ public class DockerRunner {
 		}
 		return sb.toString();
 	}
-
-	public static void main(String[] args) throws Exception {
-		DockerRunner runner = new DockerRunner();
-
-		String[][] cases = {
-			{"valid", "print('hello from codejam')"},
-			{"broken", "print('unterminated"},
-			{"infinite loop", "while True:\n    pass"},
-			{"fork bomb", "import os\nwhile True:\n    os.fork()"}
-		};
-
-		for (String[] testCase : cases) {
-			System.out.println("=== " + testCase[0] + " ===");
-			ExecutionResult result = runner.run(testCase[1], "python", Duration.ofSeconds(10));
-			System.out.println("Exit Code: " + result.exitCode());
-			System.out.println("Timed out: " + result.timedOut());
-			System.out.println("stdout:\n" + result.stdout());
-			System.out.println("stderr:\n" + result.stderr());
-			System.out.println();
-		}
-	}
 }
