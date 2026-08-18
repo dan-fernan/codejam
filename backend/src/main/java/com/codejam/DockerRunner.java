@@ -11,14 +11,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
+import org.springframework.stereotype.Component; 
 
+@Component
 public class DockerRunner {
+	// type `record` is shorthand for creating an immutable class declaration
 	private record LanguageConfig(String image, String fileName, List<String> command) {}
 
 	private static final Map<String, LanguageConfig> LANGUAGES = Map.ofEntries(
 		Map.entry("python", new LanguageConfig("python:3.12-slim", "main.py", List.of("python", "/code/main.py"))),
 		Map.entry("javascript", new LanguageConfig("node:20-slim", "main.js", List.of("node", "/code/main.js")))
 	);
+
+	private static final int MAX_CODE_LENGTH = 10_000;  // chars, checked before writing to disk
+	private static final int MAX_OUTPUT_CHARS = 2_000;  // chars, checked per stream (stdout/stderr independently)
 
 	public record ExecutionResult(String stdout, String stderr, int exitCode, boolean timedOut) {
 		public boolean success() {
@@ -31,6 +37,9 @@ public class DockerRunner {
 		if (config == null) {
 			throw new IllegalArgumentException("Unsupported language: " + language);
 		}
+		if (code.length() > MAX_CODE_LENGTH) {
+			throw new IllegalArgumentException("Code exceeds max length of " + MAX_CODE_LENGTH + " characters");
+		}
 
 		Path tempDir = Files.createTempDirectory("codejam-");
 		try {
@@ -41,8 +50,8 @@ public class DockerRunner {
 				"--network=none",
 				"--memory=128m", "--memory-swap=128m",
 				"--cpus=0.5",
-				"--pids-limit=64",
-				"-v", tempDir + ":/code:ro",
+				"--pids-limit=64", // limits pids to mitigate fork bombing
+				"-v", tempDir + ":/code:ro", // creates a bind between hostDir and container dir, needs to be read-only so that malicious code ran in the container cannot be projected back to the hostDir
 				config.image()
 			));
 			command.addAll(config.command());
@@ -52,6 +61,7 @@ public class DockerRunner {
 
 			ExecutorService executor = Executors.newFixedThreadPool(2);
 
+			// type `Future` holds the result of async work
 			Future<String> stdoutFuture = executor.submit(() -> readStream(process.getInputStream()));
 			Future<String> stderrFuture = executor.submit(() -> readStream(process.getErrorStream()));
 
@@ -82,10 +92,17 @@ public class DockerRunner {
 	private static String readStream(InputStream is) throws IOException {
 		BufferedReader reader = new BufferedReader(new InputStreamReader(is));
 		StringBuilder sb = new StringBuilder();
+		boolean truncated = false;
 		String line;
 
+		// keep draining even after truncating, otherwise the process can block on a full pipe buffer
 		while((line = reader.readLine()) != null) {
-			sb.append(line).append("\n");
+			if (!truncated && sb.length() + line.length() > MAX_OUTPUT_CHARS) {
+				sb.append("\n... [output truncated]");
+				truncated = true;
+			} else if (!truncated) {
+				sb.append(line).append("\n");
+			}
 		}
 		return sb.toString();
 	}
