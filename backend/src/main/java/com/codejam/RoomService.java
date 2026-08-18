@@ -13,13 +13,14 @@ public class RoomService {
     // ConcurrentHashMap allows multiple threads to access the same map,
     // while locking each bucket to ensure serialized updates to the same bucket
     // data, not simultaneous ones. Otherwise would have race conditions/lost updates
-     
+
     private final Map<String, Room> rooms = new ConcurrentHashMap<>(); 
 
-    public String createRoom() {
+    public Room createRoom() {
         String id = UUID.randomUUID().toString();
-        rooms.put(id, new Room(id, "", "python"));
-        return id;
+        Room room = new Room(id, "", "python");
+        rooms.put(id, room);
+        return room;
     }
 
     public Room getRoom(String id) {

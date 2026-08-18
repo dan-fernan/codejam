@@ -22,7 +22,7 @@ public class RoomController {
     }
 
     @PostMapping("/rooms")
-    public String createRoom() {
+    public Room createRoom() {
         return service.createRoom();
     }
 
