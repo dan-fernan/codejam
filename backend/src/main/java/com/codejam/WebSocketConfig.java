@@ -3,7 +3,6 @@ package com.codejam;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
-import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistration;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
 @Configuration
@@ -12,7 +11,6 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 // Spring context specifically for beans of WebSocketConfigurer type. The import
 // builds one WebSocketHandlerRegistry obj and calls the implemented method, on
 // every WebSocketConfigurer it can find, handing each the same registry.
-
 public class WebSocketConfig implements WebSocketConfigurer{
 
     private final RoomWebSocketHandler handler;
