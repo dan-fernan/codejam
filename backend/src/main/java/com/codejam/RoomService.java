@@ -27,7 +27,17 @@ public class RoomService {
         return rooms.get(id);
     }
 
-    public void updateRoom(String id, String code, String language) {
-        rooms.put(id, new Room(id, code, language));
+    public void updateCode(String id, String code) {
+        Room current = rooms.get(id);
+        if (current != null) {
+            rooms.put(id, new Room(id, code, current.language()));
+        }
+    }
+
+    public void updateLanguage(String id, String language) {
+        Room current = rooms.get(id);
+        if (current != null) {
+            rooms.put(id, new Room(id, current.code(), language));
+        }
     }
 }
