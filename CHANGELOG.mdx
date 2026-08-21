@@ -1,3 +1,38 @@
+## Aug 20 2026
+
+Added:
+    Backend Websocket configuration -
+        Created a websocket handler that handles any websockets with the ws/rooms/* URI.
+        This handler inherits from the TextWebSocketHandler class, taking in our 
+        roomService object and Jackson's object parser via dependency injection. 
+        Roomservice is used to update our server's central copy of the room's state
+        (for late joiners), with language and code updated separately to avoid 
+        concurrent overwrites. A concurrent HashMap is used to store all Websocket
+        sessions in a room (in a set) which are each notified and updated upon
+        an incoming change from another session. Other websocket methods are 
+        overriden so that Spring knows how to handle various websocket events
+        (i.e. closing and opening).
+    
+    Frontend Websocket configuration -
+        Created a useEffect that creates a websocket on roomId change. The websocket's
+        onmessage property was configured to parse an object that defines outgoing changes
+        ({type: 'code', value: print('hello')}) and update state based on the type
+        field. Added two methods, `handleCodeChange` and `handleLanguageChange` that
+        trigger off the onChange property of the <textArea> and <select> respectively.
+        These methods send the before-mentioned JSON object that contains information
+        about the actual changes to the backend. These changes serve the main purpose
+        of updating our server-side central copy for late joiners. 
+
+Removed:
+    Backend PUT handler-
+       The old PUT endpoint updated both code and language simultaneously onChange,
+       which is a recipe for concurrent overwrite disaster. New approach separates
+       what actually gets updated by `code` and `language`, and the logic is owned
+       by the websocket receiving changes, rather than our REST API receiving
+       updates via HTTP verb. GET is still relevant though, as late users need to
+       receive a copy upon joining, rather than having a blank screen until someone
+       updates the code text.
+
 ## Aug 18 2026
 
 Added:
