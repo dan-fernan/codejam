@@ -17,8 +17,6 @@ function Room() {
         const res = await fetch(`http://localhost:8080/rooms/${roomId}`)
         if (!res.ok) return
         const room = await res.json()
-        console.log(room.code)
-        console.log(room.language)
         setCode(room.code)
         setLanguage(room.language)
       } catch (err) {
