@@ -1,5 +1,8 @@
 package com.codejam;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -8,36 +11,30 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RoomService {
-    public record Room(String id, String code, String language) {}
 
     // ConcurrentHashMap allows multiple threads to access the same map,
     // while locking each bucket to ensure serialized updates to the same bucket
     // data, not simultaneous ones. Otherwise would have race conditions/lost updates
 
-    private final Map<String, Room> rooms = new ConcurrentHashMap<>(); 
+    private final Map<String, List<byte[]>> rooms = new ConcurrentHashMap<>(); 
 
-    public Room createRoom() {
+    public String createRoom() {
         String id = UUID.randomUUID().toString();
-        Room room = new Room(id, "", "python");
-        rooms.put(id, room);
-        return room;
+        rooms.put(id, Collections.synchronizedList(new ArrayList<>()));
+        return id;
     }
 
-    public Room getRoom(String id) {
+    public boolean roomExists(String id) {
+        return rooms.containsKey(id);
+    }
+    public List<byte[]> getUpdates(String id) {
         return rooms.get(id);
     }
 
-    public void updateCode(String id, String code) {
-        Room current = rooms.get(id);
-        if (current != null) {
-            rooms.put(id, new Room(id, code, current.language()));
-        }
-    }
-
-    public void updateLanguage(String id, String language) {
-        Room current = rooms.get(id);
-        if (current != null) {
-            rooms.put(id, new Room(id, current.code(), language));
+    public void appendUpdate(String id, byte[] update) {
+        List<byte[]> updates = rooms.get(id);
+        if (updates != null) {
+            updates.add(update);
         }
     }
 }

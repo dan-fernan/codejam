@@ -2,26 +2,21 @@ package com.codejam;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.handler.BinaryWebSocketHandler;
 
-import tools.jackson.databind.ObjectMapper;
-
+import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class RoomWebSocketHandler extends TextWebSocketHandler{
+public class RoomWebSocketHandler extends BinaryWebSocketHandler{
     
     private final RoomService roomService;
-    private final ObjectMapper objectMapper;
     private final Map<String, Set<WebSocketSession>> roomSessions = new ConcurrentHashMap<>();
 
-    private record WsMessage(String type, String value) {}
-
-    public RoomWebSocketHandler(RoomService roomService, ObjectMapper objectMapper) {
+    public RoomWebSocketHandler(RoomService roomService) {
         this.roomService = roomService;
-        this.objectMapper = objectMapper;
     }
 
     private String extractRoomId(WebSocketSession session) {
@@ -36,19 +31,30 @@ public class RoomWebSocketHandler extends TextWebSocketHandler{
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) throws Exception {
         String roomId = extractRoomId(session);
 
-        WsMessage wsMessage = objectMapper.readValue(message.getPayload(), WsMessage.class);
-        switch(wsMessage.type()) {
-            case "code" -> roomService.updateCode(roomId, wsMessage.value());
-            case "language" -> roomService.updateLanguage(roomId, wsMessage.value());
-        }
+        ByteBuffer payload = message.getPayload();
+        byte[] update = new byte[payload.remaining()];
+        payload.get(update);
+        // creates a new array to hold the payload content, better than relying on
+        // ambiguous Spring output
+
+        roomService.appendUpdate(roomId, update);
+        
 
         for (WebSocketSession peer : roomSessions.getOrDefault(roomId, Set.of())) {
             if (peer.isOpen() && !peer.getId().equals(session.getId())) {
-                peer.sendMessage(message);
-            }
+                try {
+                    peer.sendMessage(new BinaryMessage(update)); 
+                    /* 
+                        must create a new BinaryMessage for each session. Without individual Binary messages,
+                        each session reads from the same object, which is read through pointers. The first
+                        recipient will receive the entire update, but succeeding ones will receive empty messages,
+                        as the payload would be effectively exhausted by the first recipient.
+                    */
+                } catch (Exception ignored) {}
+            }   
         }
     }
 
