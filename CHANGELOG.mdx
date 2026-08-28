@@ -1,3 +1,53 @@
+## Aug 27 2026
+
+Added:
+    Yjs/Monaco integration (frontend) -
+        Replaced the <textarea> with Monaco Editor (@monaco-editor/react), synced via
+        real Yjs CRDT operations instead of broadcasting raw code strings. A Y.Doc is
+        created per room on mount; the room's stored update history is fetched, decoded
+        from base64 (Jackson has to text-encode raw byte[] to fit it into JSON), merged
+        via Y.mergeUpdates, and applied once before Monaco ever binds to it, avoiding
+        replay flicker. y-monaco's MonacoBinding then wires the resulting Y.Text directly
+        to Monaco's model, translating Monaco's structured edit events into CRDT ops (and
+        back) automatically. Language moved off its own message type onto a Y.Map
+        (`metadata`), so it now rides the same update/observe/sync path as code changes
+        instead of needing separate handling.
+    Byte-array based room storage (backend) -
+        RoomService now stores each room as an append-only list of raw Yjs update byte
+        arrays instead of a Room(code, language) record. Java never decodes or interprets
+        these bytes - all real CRDT decode/merge logic runs client-side, in the browser.
+        GET /rooms/{id} now returns this raw update list directly (still 404ing if the
+        room doesn't exist), serving as the bootstrap source for late joiners.
+    Binary WebSocket relay -
+        RoomWebSocketHandler now extends BinaryWebSocketHandler instead of
+        TextWebSocketHandler. Incoming updates are copied into a fresh byte[] (reading via
+        the ByteBuffer's remaining()/get(), not the riskier .array(), which ignores
+        position/limit), appended to RoomService, and relayed to other room peers via a
+        freshly-constructed BinaryMessage per peer - reusing the same buffer object across
+        multiple sendMessage calls would silently truncate every recipient after the first,
+        since sending consumes the buffer's position.
+
+Removed:
+    JSON message envelope -
+        The {type, value} WsMessage record and ObjectMapper-based parsing are gone
+        entirely. Java no longer needs to understand what a message means to route it
+        correctly - it's a pure content-agnostic store-and-relay now. RoomService's
+        updateCode/updateLanguage split is replaced by a single appendUpdate.
+
+Fixed while integrating:
+    y-monaco / monaco-editor packaging mismatch -
+        y-monaco hasn't been published since 0.1.6 and hardcodes a legacy deep import path
+        into monaco-editor that predates monaco-editor's current, more restrictive exports
+        map, so it resolves to a garbled, nonexistent path. Added a Vite resolve.alias
+        (anchored to the config file's own location via import.meta.url, not the invoking
+        cwd, so it holds up in CI/prod builds too) to point that one import straight at the
+        real file.
+    Missing y-protocols dependency -
+        y-monaco imports y-protocols/awareness internally but never declares it as a
+        dependency - most projects get it for free transitively via y-websocket, which this
+        project deliberately doesn't install (no sidecar in this architecture). Installed
+        y-protocols directly.
+
 ## Aug 20 2026
 
 Added:
