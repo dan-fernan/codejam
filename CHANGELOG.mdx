@@ -7,6 +7,29 @@ Added:
         this is done via the same GET method used to retrieve a room's Y.Doc updates on 
         initial join. Should consider making a separate endpoint that contains only roomId's,
         as a (potentially) large amount of processed bytes are completely unused.
+    Mascot-driven visual redesign (frontend) -
+        Pulled CodejamJarFlat's own palette/keyframes out into a shared theme.ts (C palette,
+        KEYFRAMES, a FLAVORS list for multiplayer cursor colors, font stacks) so the mascot
+        and the rest of the UI can't drift apart. Converted CodejamJarFlat from an untyped
+        .jsx into a typed .tsx importing that theme, and gave it a hopSignal prop so a parent
+        can trigger its hop animation externally (used for a "hop as transition-out" on room
+        create/join) without simulating a click on the mascot itself. Nunito + JetBrains Mono
+        loaded via Google Fonts.
+        Home now centers the mascot above a paper-pill join-code input and jam-colored
+        Create/Join buttons, with the mascot's mood flipping to "thinking" on an invalid join
+        code. Room's header uses the mascot (shrunk, gaze disabled) as both the app mark and
+        a live status indicator - mood is driven by real state (sleepy while idle, happy on
+        any doc activity local or remote, thinking while a run is in flight, wink briefly
+        after a clean run) via a moodLockRef guard that stops typing-driven activity from
+        stomping the run-driven mood mid-execution. The console panel now keeps stdout/stderr
+        as separate state so stderr can render in the mouth-red color instead of being
+        concatenated into one plain block.
+    Deterministic multiplayer cursor colors -
+        Replaced the random per-client HSL cursor color with flavorForClientId(), which picks
+        from a small fixed FLAVORS palette (same saturation/lightness family as the mascot's
+        jam red) keyed off the client's own Yjs clientID, so a collaborator's color is stable
+        for their whole session instead of re-rolling on reconnect.
+
 ## Sep 2 2026
 
 Added:

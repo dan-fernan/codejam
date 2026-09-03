@@ -30,19 +30,27 @@
   instead of one overwriting the other. Language selection rides the same sync path via a `Y.Map`.
   Local vs. remote changes are distinguished with Yjs's transaction `origin` tagging, so applying an
   incoming update never gets echoed back out over the socket.
+  - **Presence** — awareness/cursor updates share the same WebSocket as doc updates, distinguished by
+  a one-byte tag Java reads to decide whether to persist (doc updates only — cursor state is never
+  written to `RoomService`). Each client's `y-protocols` `Awareness` broadcasts a `{name, color}`
+  state; `MonacoBinding`'s 4th constructor argument renders remote cursors/selections, colored per
+  client from a small fixed palette keyed off their Yjs `clientID`.
+  - **UI** — the whole frontend takes its palette, fonts, and animation keyframes from a single
+  `theme.ts`, sourced from the `CodejamJarFlat` mascot component so the mascot and the rest of the app
+  never drift apart. The mascot itself doubles as a live status indicator in the room header, its mood
+  driven by real state (idle, typing, running, run result) rather than a generic spinner.
 
   ## Running locally
 
   ## Status / next up
 
   Yjs/Monaco integration is in place — concurrent edits merge correctly instead of last-write-wins.
-  What's left, roughly in order:
+  Live cursor/selection presence and a shared mascot-driven visual identity are in place too. What's
+  left, roughly in order:
   - **Bounding storage growth** — each room's update list currently grows forever. Next step is
   periodic checkpointing: have a connected client periodically replace the stored list with a single
   compacted `Y.encodeStateAsUpdate` snapshot of its own doc.
   - **Persistence** — rooms are in-memory only and disappear on backend restart. Planned: a MongoDB
   layer, plus a browser cookie tracking a user's recently created rooms.
-  - **Presence/awareness** — `y-protocols` is installed (a `y-monaco` transitive dependency) but its
-  awareness features aren't wired up yet — no shared cursors/selections between collaborators currently.
 
   See `CHANGELOG.mdx` for detailed history of what's been added/changed.

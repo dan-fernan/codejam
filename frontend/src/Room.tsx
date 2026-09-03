@@ -4,10 +4,14 @@ import { MonacoBinding } from 'y-monaco'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
+import CodejamJarFlat, { type Mood } from './CodejamJarFlat'
+import { C, FONT_UI, FONT_MONO, flavorForClientId } from './theme'
 
 const LANGUAGES = ['python', 'javascript']
 const DOC_UPDATE = 0
 const AWARENESS_UPDATE = 1
+const IDLE_MS = 6000
+const WINK_MS = 1500
 
 // necessary as response from 'GET' returns a JSON array of base64 strings, as Jackson has to text-encode the raw bytes[]
 // to get them to fit into JSON
@@ -16,22 +20,30 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 // Uint8Array type is necessary as input for yjs operations
 
-function randomColor(): string {
-  return `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`
-}
-
 function Room() {
   const { roomId } = useParams()
   const [language, setLanguage] = useState('python')
-  const [output, setOutput] = useState('')
+  const [output, setOutput] = useState({ stdout: '', stderr: '' })
   const [running, setRunning] = useState(false)
   const [ready, setReady] = useState(false)
+  const [mood, setMood] = useState<Mood>('sleepy')
 
   const docRef = useRef<Y.Doc | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const bindingRef = useRef<MonacoBinding | null>(null)
   const awarenessRef = useRef<Awareness | null>(null)
   const cursorStyleRef = useRef<HTMLStyleElement | null>(null)
+  // true while a run is in flight or its "wink" result is still showing - keeps
+  // typing activity from stomping on that mood until it's done
+  const moodLockRef = useRef(false)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  function markActive() {
+    if (moodLockRef.current) return
+    setMood('happy')
+    clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = setTimeout(() => setMood('sleepy'), IDLE_MS)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -53,7 +65,7 @@ function Room() {
       const awareness = new Awareness(doc)
       awareness.setLocalStateField('user', {
         name: `Guest-${Math.floor(Math.random() * 1000)}`,
-        color: randomColor(),
+        color: flavorForClientId(doc.clientID),
       })
       awarenessRef.current = awareness
 
@@ -81,14 +93,16 @@ function Room() {
               .yRemoteSelectionHead-${clientID}::after {
                 content: '${user.name ?? ''}';
                 position: absolute;
-                top: -1.1em;
+                top: -1.4em;
                 left: -2px;
+                font-family: ${FONT_UI};
+                font-weight: 700;
                 font-size: 11px;
-                padding: 0 4px;
+                padding: 2px 6px;
                 white-space: nowrap;
-                color: white;
+                color: ${C.white};
                 background-color: ${user.color};
-                border-radius: 2px;
+                border-radius: 5px;
                 pointer-events: none;
               }
             `)
@@ -141,6 +155,7 @@ function Room() {
       }
 
       doc.on('update', (update, origin) => {
+        markActive() // both local edits and remote peers typing count as "someone's active"
         if (origin == 'remote') return
         sendFramed(DOC_UPDATE, update)
       })
@@ -164,6 +179,7 @@ function Room() {
     return () => {
       cancelled = true
       if (heartbeat) clearInterval(heartbeat)
+      clearTimeout(idleTimerRef.current)
       labelTimers.forEach(clearTimeout)
       labelTimers.clear()
       cursorStyleRef.current?.remove()
@@ -183,7 +199,10 @@ function Room() {
 
   async function handleRun() {
     setRunning(true)
-    setOutput('')
+    moodLockRef.current = true
+    clearTimeout(idleTimerRef.current)
+    setMood('thinking')
+    setOutput({ stdout: '', stderr: '' })
     try {
       const code = docRef.current?.getText('code').toString() ?? ''
       const res = await fetch('http://localhost:8080/execute', {
@@ -193,9 +212,21 @@ function Room() {
       })
 
       const result = await res.json()
-      setOutput(result.stdout + (result.stderr ? '\n' + result.stderr : ''))
+      setOutput({ stdout: result.stdout ?? '', stderr: result.stderr ?? '' })
+      if (result.stderr) {
+        moodLockRef.current = false
+        markActive()
+      } else {
+        setMood('wink') // clean run, no stderr
+        setTimeout(() => {
+          moodLockRef.current = false
+          markActive()
+        }, WINK_MS)
+      }
     } catch (err) {
-      setOutput('Request failed' + err)
+      setOutput({ stdout: '', stderr: 'Request failed: ' + err })
+      moodLockRef.current = false
+      markActive()
     } finally {
       setRunning(false)
     }
@@ -205,21 +236,121 @@ function Room() {
     docRef.current?.getMap('metadata').set('language', newLanguage)
   }
 
+  const pillStyle = {
+    fontFamily: FONT_MONO,
+    fontSize: 13,
+    color: C.ink,
+    background: C.paper,
+    border: 'none',
+    borderRadius: 999,
+    padding: '6px 14px',
+  }
+
   return (
-    <>
-      <select value={language} onChange={(e) => handleLanguageChange(e.target.value)}>
-        {LANGUAGES.map((lang) => (
-          <option key={lang} value={lang}>{lang}</option>
-        ))}
-      </select>
-      {ready && (
-        <Editor height="400px" language={language} onMount={handleEditorMount} />
-      )}
-      <button onClick={handleRun} disabled={running}>
-        {running? 'Running...' : 'Run'}
-      </button>
-      <pre>{output}</pre>
-    </>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: C.lid,
+          color: C.white,
+          padding: '8px 20px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <CodejamJarFlat mood={mood} size={44} gaze={false} />
+          <span style={{ fontFamily: FONT_UI, fontWeight: 800, fontSize: 18 }}>
+            Code<span style={{ color: C.jam }}>Jam</span>
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={pillStyle}>{roomId}</span>
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <select
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              style={{
+                ...pillStyle,
+                fontFamily: FONT_UI,
+                fontWeight: 700,
+                appearance: 'none',
+                cursor: 'pointer',
+                paddingRight: 28,
+              }}
+            >
+              {LANGUAGES.map((lang) => (
+                <option key={lang} value={lang}>{lang}</option>
+              ))}
+            </select>
+            <svg
+              width="10"
+              height="6"
+              viewBox="0 0 10 6"
+              fill="none"
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+            >
+              <path d="M1 1L5 5L9 1" stroke={C.ink} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+      </header>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, padding: 20 }}>
+        <div
+          style={{
+            background: C.white,
+            borderRadius: 12,
+            padding: 8,
+            border: `1px solid ${C.glassNeck}`,
+          }}
+        >
+          {ready && (
+            <Editor options={{ padding: { top: 16 }}}height="420px" language={language} onMount={handleEditorMount} />
+          )}
+        </div>
+
+        <div
+          style={{
+            background: C.paper,
+            borderRadius: 12,
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: FONT_UI, fontWeight: 700, fontSize: 13, color: C.ink }}>Console</span>
+            <button
+              onClick={handleRun}
+              disabled={running}
+              style={{
+                fontFamily: FONT_UI,
+                fontWeight: 700,
+                fontSize: 14,
+                color: C.white,
+                background: C.jam,
+                border: 'none',
+                borderRadius: 999,
+                padding: '8px 20px',
+                cursor: running ? 'default' : 'pointer',
+              }}
+            >
+              {running ? 'Running...' : 'Run'}
+            </button>
+          </div>
+          <pre style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 13, color: C.ink, whiteSpace: 'pre-wrap' }}>
+            {output.stdout}
+          </pre>
+          {output.stderr && (
+            <pre style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 13, color: C.mouth, whiteSpace: 'pre-wrap' }}>
+              {output.stderr}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

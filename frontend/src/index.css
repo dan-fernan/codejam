@@ -1,0 +1,24 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #e9f2f4; /* C.glass */
+  color: #2b2630; /* C.ink */
+  font-family: 'Nunito', ui-rounded, system-ui, sans-serif;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}

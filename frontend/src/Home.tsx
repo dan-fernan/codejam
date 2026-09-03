@@ -1,25 +1,39 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-// @ts-expect-error CodejamJarFlat.jsx does not currently have TypeScript declarations.
-import CodejamJarFlat from './CodejamJarFlat.jsx'
+import CodejamJarFlat, { type Mood } from './CodejamJarFlat'
+import { C, FONT_UI, FONT_MONO } from './theme'
 
-function Home () {
+const HOP_MS = 740
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function Home() {
     const [creating, setCreating] = useState(false)
     const [joining, setJoining] = useState(false)
     const [roomId, setRoomId] = useState('')
     const [joinError, setJoinError] = useState('')
+    const [mood, setMood] = useState<Mood>('happy')
+    const [hopSignal, setHopSignal] = useState(0)
+    const [tilting, setTilting] = useState(false)
+    const moodResetTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
     const navigate = useNavigate()
+
+    function pressJar() {
+        setTilting(true)
+        setTimeout(() => setTilting(false), 420)
+    }
 
     async function createRoom() {
         setCreating(true)
+        pressJar()
         try {
-            let res = await fetch('http://localhost:8080/rooms', { method: 'POST' })
+            const res = await fetch('http://localhost:8080/rooms', { method: 'POST' })
             const room = await res.json()
+            setHopSignal((s) => s + 1)
+            await wait(HOP_MS)
             navigate(`/room/${room.id}`)
         } finally {
             setCreating(false)
         }
-
     }
 
     async function joinRoom() {
@@ -28,13 +42,16 @@ function Home () {
         setJoining(true)
         setJoinError('')
         try {
-            const res = await fetch(`http://localhost:8080/rooms/${id}`) 
-            // Eventually consider creating a second endpoint, as this returns an unused and frankly large amount of
-            // bytes, which are used to actually update a Y.Doc. This is just an existence check, so not really necessary.
+            const res = await fetch(`http://localhost:8080/rooms/${id}`)
             if (!res.ok) {
+                clearTimeout(moodResetTimer.current)
+                setMood('thinking')
                 setJoinError('Room not found')
+                moodResetTimer.current = setTimeout(() => setMood('happy'), 1400)
                 return
             }
+            setHopSignal((s) => s + 1)
+            await wait(HOP_MS)
             navigate(`/room/${id}`)
         } finally {
             setJoining(false)
@@ -42,23 +59,98 @@ function Home () {
     }
 
     return (
-        <>
-            <CodejamJarFlat />
-            <button onClick={createRoom} disabled={creating}>
+        <div
+            style={{
+                minHeight: '100vh',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 20,
+                padding: '32px 16px',
+            }}
+        >
+            <h1
+                style={{
+                    margin: 0,
+                    fontFamily: FONT_UI,
+                    fontWeight: 800,
+                    fontSize: 32,
+                    color: C.ink,
+                    letterSpacing: -0.5,
+                }}
+            >
+                Code<span style={{ color: C.jam }}>Jam</span>
+            </h1>
+
+            <CodejamJarFlat mood={mood} size={200} hopSignal={hopSignal} />
+
+            <button
+                onClick={createRoom}
+                disabled={creating}
+                style={{
+                    fontFamily: FONT_UI,
+                    fontWeight: 700,
+                    fontSize: 16,
+                    color: C.white,
+                    background: C.jam,
+                    border: 'none',
+                    borderRadius: 999,
+                    padding: '12px 28px',
+                    cursor: creating ? 'default' : 'pointer',
+                    animation: tilting ? 'cjf-tilt 400ms ease' : 'none',
+                    transformOrigin: '50% 100%',
+                }}
+            >
                 {creating ? 'Creating...' : 'Create Room'}
             </button>
-            <div>
-                <input
-                    value={roomId}
-                    onChange={(e) => setRoomId(e.target.value)}
-                    placeholder="Room ID"
-                />
-                <button onClick={joinRoom} disabled={joining || !roomId.trim()}>
-                    {joining ? 'Joining...' : 'Join Room'}
-                </button>
-                {joinError && <p>{joinError}</p>}
+
+            <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.lidTop }}>or join an existing one</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                        value={roomId}
+                        onChange={(e) => setRoomId(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
+                        placeholder="room code"
+                        style={{
+                            fontFamily: FONT_MONO,
+                            fontSize: 15,
+                            color: C.ink,
+                            background: C.paper,
+                            border: `2px solid ${joinError ? C.mouth : 'transparent'}`,
+                            borderBottom: `2px solid ${joinError ? C.mouth : C.jam}`,
+                            borderRadius: 8,
+                            padding: '10px 14px',
+                            outline: 'none',
+                            width: 180,
+                        }}
+                    />
+                    <button
+                        onClick={joinRoom}
+                        disabled={joining || !roomId.trim()}
+                        style={{
+                            fontFamily: FONT_UI,
+                            fontWeight: 700,
+                            fontSize: 15,
+                            color: C.white,
+                            background: C.jam,
+                            border: 'none',
+                            borderRadius: 999,
+                            padding: '10px 22px',
+                            cursor: joining || !roomId.trim() ? 'default' : 'pointer',
+                            opacity: !roomId.trim() ? 0.6 : 1,
+                        }}
+                    >
+                        {joining ? 'Joining...' : 'Join Room'}
+                    </button>
+                </div>
+                {joinError && (
+                    <p style={{ margin: 0, fontFamily: FONT_UI, fontSize: 13, color: C.mouth }}>{joinError}</p>
+                )}
             </div>
-        </>
+        </div>
     )
 }
 
