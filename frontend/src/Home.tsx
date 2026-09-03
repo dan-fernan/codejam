@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+// @ts-expect-error CodejamJarFlat.jsx does not currently have TypeScript declarations.
+import CodejamJarFlat from './CodejamJarFlat.jsx'
 
 function Home () {
     const [creating, setCreating] = useState(false)
@@ -41,6 +43,7 @@ function Home () {
 
     return (
         <>
+            <CodejamJarFlat />
             <button onClick={createRoom} disabled={creating}>
                 {creating ? 'Creating...' : 'Create Room'}
             </button>
