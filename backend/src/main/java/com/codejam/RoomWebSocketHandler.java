@@ -5,6 +5,7 @@ import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.BinaryWebSocketHandler;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,18 +36,24 @@ public class RoomWebSocketHandler extends BinaryWebSocketHandler{
         String roomId = extractRoomId(session);
 
         ByteBuffer payload = message.getPayload();
-        byte[] update = new byte[payload.remaining()];
-        payload.get(update);
+        byte[] raw = new byte[payload.remaining()];
+        payload.get(raw);
         // creates a new array to hold the payload content, better than relying on
         // ambiguous Spring output
 
-        roomService.appendUpdate(roomId, update);
-        
+        if (raw.length > 0 && raw[0] == 0) {
+            // tag 0 = a real Y.Doc update - strip the leading tag byte before
+            // persisting, so GET /rooms/{id} keeps returning plain Yjs update bytes
+            byte[] update = Arrays.copyOfRange(raw, 1, raw.length);
+            roomService.appendUpdate(roomId, update);
+        }
+        // tag 1 = awareness/cursor update - relayed below, never persisted
+        // (ephemeral cursor state has no business in the room's permanent history)
 
         for (WebSocketSession peer : roomSessions.getOrDefault(roomId, Set.of())) {
             if (peer.isOpen() && !peer.getId().equals(session.getId())) {
                 try {
-                    peer.sendMessage(new BinaryMessage(update)); 
+                    peer.sendMessage(new BinaryMessage(raw));
                     /* 
                         must create a new BinaryMessage for each session. Without individual Binary messages,
                         each session reads from the same object, which is read through pointers. The first
