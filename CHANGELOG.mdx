@@ -1,3 +1,12 @@
+## Sep 3 2026
+
+Added:
+    Room joining via home -
+        Now allows you to join a room directly via input box rather than manually appending
+        the roomId to the existing URL. Includes error message if the room doesn't exist,
+        this is done via the same GET method used to retrieve a room's Y.Doc updates on 
+        initial join. Should consider making a separate endpoint that contains only roomId's,
+        as a (potentially) large amount of processed bytes are completely unused.
 ## Sep 2 2026
 
 Added:

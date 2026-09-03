@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 
 function Home () {
     const [creating, setCreating] = useState(false)
+    const [joining, setJoining] = useState(false)
+    const [roomId, setRoomId] = useState('')
+    const [joinError, setJoinError] = useState('')
     const navigate = useNavigate()
 
     async function createRoom() {
@@ -16,10 +19,43 @@ function Home () {
         }
 
     }
+
+    async function joinRoom() {
+        const id = roomId.trim()
+        if (!id) return
+        setJoining(true)
+        setJoinError('')
+        try {
+            const res = await fetch(`http://localhost:8080/rooms/${id}`) 
+            // Eventually consider creating a second endpoint, as this returns an unused and frankly large amount of
+            // bytes, which are used to actually update a Y.Doc. This is just an existence check, so not really necessary.
+            if (!res.ok) {
+                setJoinError('Room not found')
+                return
+            }
+            navigate(`/room/${id}`)
+        } finally {
+            setJoining(false)
+        }
+    }
+
     return (
-        <button onClick={createRoom} disabled={creating}>
-            {creating ? 'Creating...' : 'Create Room'}
-        </button>
+        <>
+            <button onClick={createRoom} disabled={creating}>
+                {creating ? 'Creating...' : 'Create Room'}
+            </button>
+            <div>
+                <input
+                    value={roomId}
+                    onChange={(e) => setRoomId(e.target.value)}
+                    placeholder="Room ID"
+                />
+                <button onClick={joinRoom} disabled={joining || !roomId.trim()}>
+                    {joining ? 'Joining...' : 'Join Room'}
+                </button>
+                {joinError && <p>{joinError}</p>}
+            </div>
+        </>
     )
 }
 
