@@ -1,10 +1,13 @@
-import { useState, useEffect, useRef } from 'react'  
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { MonacoBinding } from 'y-monaco'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import * as Y from 'yjs'
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 
 const LANGUAGES = ['python', 'javascript']
+const DOC_UPDATE = 0
+const AWARENESS_UPDATE = 1
 
 // necessary as response from 'GET' returns a JSON array of base64 strings, as Jackson has to text-encode the raw bytes[]
 // to get them to fit into JSON
@@ -13,7 +16,9 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 // Uint8Array type is necessary as input for yjs operations
 
-
+function randomColor(): string {
+  return `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`
+}
 
 function Room() {
   const { roomId } = useParams()
@@ -25,9 +30,13 @@ function Room() {
   const docRef = useRef<Y.Doc | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const bindingRef = useRef<MonacoBinding | null>(null)
+  const awarenessRef = useRef<Awareness | null>(null)
+  const cursorStyleRef = useRef<HTMLStyleElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    const labelTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
     async function connect() {
       const res = await fetch(`http://localhost:8080/rooms/${roomId}`)
@@ -41,31 +50,124 @@ function Room() {
       if (cancelled) { doc.destroy(); return}
       docRef.current = doc
 
+      const awareness = new Awareness(doc)
+      awareness.setLocalStateField('user', {
+        name: `Guest-${Math.floor(Math.random() * 1000)}`,
+        color: randomColor(),
+      })
+      awarenessRef.current = awareness
+
+      const cursorStyleEl = document.createElement('style')
+      document.head.appendChild(cursorStyleEl)
+      cursorStyleRef.current = cursorStyleEl
+
+      // y-monaco only applies classNames for remote cursors/selections (yRemoteSelection-<clientId>,
+      // yRemoteSelectionHead-<clientId>) - it ships no CSS itself, so we generate it per client here,
+      // reusing the same { name, color } we already put in awareness's local state field
+      const activeLabels = new Set<number>()
+      function updateCursorStyles() {
+        const rules: string[] = []
+        awareness.getStates().forEach((state, clientID) => {
+          if (clientID === doc.clientID) return
+          const user = state.user as { name?: string; color?: string } | undefined
+          if (!user?.color) return
+          // thin colored line always visible - the name flag only shows briefly after a move
+          rules.push(`
+            .yRemoteSelection-${clientID} { background-color: ${user.color}66; }
+            .yRemoteSelectionHead-${clientID} { position: relative; border-left: 2px solid ${user.color}; }
+          `)
+          if (activeLabels.has(clientID)) {
+            rules.push(`
+              .yRemoteSelectionHead-${clientID}::after {
+                content: '${user.name ?? ''}';
+                position: absolute;
+                top: -1.1em;
+                left: -2px;
+                font-size: 11px;
+                padding: 0 4px;
+                white-space: nowrap;
+                color: white;
+                background-color: ${user.color};
+                border-radius: 2px;
+                pointer-events: none;
+              }
+            `)
+          }
+        })
+        cursorStyleEl.textContent = rules.join('\n')
+      }
+      // 'change' (not 'update') is deep-equality filtered by y-protocols, so a heartbeat
+      // resend of unchanged state never reaches here and never re-triggers the label
+      awareness.on('change', ({ added, updated }: { added: number[]; updated: number[]; removed: number[] }) => {
+        added.concat(updated).forEach((clientID) => {
+          if (clientID === doc.clientID) return
+          activeLabels.add(clientID)
+          clearTimeout(labelTimers.get(clientID))
+          labelTimers.set(clientID, setTimeout(() => {
+            activeLabels.delete(clientID)
+            updateCursorStyles()
+          }, 2000))
+        })
+        updateCursorStyles()
+      })
+
       const ymap = doc.getMap('metadata')
       setLanguage((ymap.get('language') as string) || 'python')
       ymap.observe(() => setLanguage((ymap.get('language') as string) || 'python'))
 
       const ws = new WebSocket(`ws://localhost:8080/ws/rooms/${roomId}`)
-      ws.binaryType = 'arraybuffer' 
+      ws.binaryType = 'arraybuffer'
       // allows incoming messages to be represented as an arraybuffer rather than an opaque blob.
       // otherwise, would need to process the blob into something that can be applied as a yjs update directly
       wsRef.current = ws
 
+      function sendFramed(tag: number, payload: Uint8Array) {
+        if (ws.readyState !== WebSocket.OPEN) return
+        const framed = new Uint8Array(1 + payload.length)
+        framed[0] = tag
+        framed.set(payload, 1)
+        ws.send(framed)
+      }
+
       ws.onmessage = (event) => {
-        Y.applyUpdate(doc, new Uint8Array(event.data), 'remote')
+        const bytes = new Uint8Array(event.data)
+        const tag = bytes[0]
+        const payload = bytes.subarray(1)
+        if (tag === DOC_UPDATE) {
+          Y.applyUpdate(doc, payload, 'remote')
+        } else {
+          applyAwarenessUpdate(awareness, payload, 'remote')
+        }
       }
 
       doc.on('update', (update, origin) => {
         if (origin == 'remote') return
-        if (ws.readyState === WebSocket.OPEN) ws.send(update as Uint8Array<ArrayBuffer>)
+        sendFramed(DOC_UPDATE, update)
       })
+
+      awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+        if (origin === 'remote') return
+        const changed = added.concat(updated, removed)
+        sendFramed(AWARENESS_UPDATE, encodeAwarenessUpdate(awareness, changed))
+      })
+
+      // resend full local state periodically so late joiners (who missed the
+      // original change events) still pick up everyone's current cursor
+      heartbeat = setInterval(() => {
+        sendFramed(AWARENESS_UPDATE, encodeAwarenessUpdate(awareness, [doc.clientID]))
+      }, 10000)
 
       setReady(true)
     }
     connect()
-    
+
     return () => {
       cancelled = true
+      if (heartbeat) clearInterval(heartbeat)
+      labelTimers.forEach(clearTimeout)
+      labelTimers.clear()
+      cursorStyleRef.current?.remove()
+      awarenessRef.current?.destroy() // broadcasts a final "removed" state while the socket is still open
       wsRef.current?.close()
       bindingRef.current?.destroy()
       docRef.current?.destroy()
@@ -74,9 +176,9 @@ function Room() {
   }, [roomId])
 
   const handleEditorMount: OnMount = (editor) => {
-    if (!docRef.current) return
+    if (!docRef.current || !awarenessRef.current) return
     const ytext = docRef.current.getText('code')
-    bindingRef.current = new MonacoBinding(ytext, editor.getModel()!, new Set([editor]))
+    bindingRef.current = new MonacoBinding(ytext, editor.getModel()!, new Set([editor]), awarenessRef.current)
   }
 
   async function handleRun() {
