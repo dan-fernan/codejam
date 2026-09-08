@@ -1,3 +1,23 @@
+## Sep 7 2026
+
+Added:
+    Sidecar service scaffold (new `sidecar/` dir) -
+        New top-level Node/TypeScript service, sibling to `frontend` and `backend`, whose
+        only job is decoding and compacting a room's Yjs bytes on room-empty before they're
+        persisted - Java deliberately has no Yjs support and never decodes CRDT bytes, so
+        something else has to exist to run Y.mergeUpdates/encodeStateAsUpdate. Pinned yjs
+        and y-protocols to the same versions the frontend uses, to avoid any wire-format
+        drift between what the browser and the sidecar each decode. Dependencies are
+        intentionally minimal - yjs, y-protocols, ws, pg, dotenv - no ORM and no HTTP
+        framework, since the entire footprint is one outbound WS connection per watched
+        room and one inbound endpoint for Java to call.
+        Currently: db.ts has a working writeRoomBytes() - an upsert (INSERT ... ON CONFLICT
+        (id) DO UPDATE) against a `rooms` table that doesn't exist yet, so this is untested
+        against a real schema. index.ts is still just the RoomWatcher map/type shape and an
+        empty startWatching() stub - the actual WS connection handling, awareness-based
+        empty-room detection, and the HTTP endpoint Java will call to trigger it are not
+        implemented yet. Java has no corresponding call into this service at all yet either.
+
 ## Sep 3 2026
 
 Added:
