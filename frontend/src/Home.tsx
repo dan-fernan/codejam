@@ -26,7 +26,7 @@ function Home() {
         setCreating(true)
         pressJar()
         try {
-            const res = await fetch('http://localhost:8080/rooms', { method: 'POST' })
+            const res = await fetch('http://localhost:8080/rooms', { method: 'POST', credentials: 'include'})
             const room = await res.json()
             setHopSignal((s) => s + 1)
             await wait(HOP_MS)

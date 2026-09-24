@@ -1,3 +1,53 @@
+## Sep 24 2026
+
+Added:
+    Postgres schema (Neon) -
+        Two tables now exist: `rooms` (id TEXT primary key, bytes BYTEA nullable, updated_at
+        TIMESTAMPTZ defaulting to now()) and `room_participants` (user_id, room_id, composite
+        primary key over both, room_id a foreign key to rooms(id) ON DELETE CASCADE, so a
+        room's participant rows are cleaned up automatically when the room is evicted).
+        bytes is nullable because a room is inserted empty at creation and only gets a
+        snapshot later. There's deliberately no created_at - eviction is idle-based, which
+        only needs updated_at - and no users table, since userId is an anonymous
+        cookie-issued identifier with nothing to reference. Created by hand with psql, not
+        via a migration script.
+    RoomRepository (backend) -
+        New class owning all Java-side SQL via JdbcTemplate, kept separate from RoomService
+        so the cache-management and transaction concerns don't mix. createRoom(roomId,
+        userId) is @Transactional: it inserts the empty rooms row first (the FK requires
+        it), then the room_participants row, and both commit or neither does. If userId is
+        null (cookies disabled/cleared) it skips the participant insert and just creates
+        the room.
+    Datasource configuration (backend) -
+        Added spring-boot-starter-jdbc and the Postgres driver. The connection is configured
+        entirely through SPRING_DATASOURCE_URL/USERNAME/PASSWORD environment variables (Spring
+        binds them to spring.datasource.* on its own, so application.properties is untouched).
+        They live in a gitignored backend/.env, which Spring does not read itself - it has to
+        be loaded into the shell before starting (set -a && source .env && set +a). The URL
+        must be in JDBC form (jdbc:postgresql://host/db?sslmode=require) with credentials
+        kept out of it, unlike Neon's raw connection string.
+
+Changed:
+    Room creation now writes through to the DB (backend + frontend) -
+        POST /rooms reads an optional userId cookie (@CookieValue, required = false) and
+        passes it to RoomService.createRoom(userId), which now takes RoomRepository via
+        constructor injection and persists to Postgres before touching the in-memory map -
+        if the transaction throws, nothing is cached and no id is returned. RoomController's
+        @CrossOrigin gained allowCredentials so the browser will expose a response to a
+        cookie-bearing request from the 5173 origin, and Home's create fetch now sends
+        credentials: 'include' - without both, the cookie is never attached or the response
+        is withheld from the page.
+        Currently: nothing issues the userId cookie yet, so from the browser every room is
+        created down the null-userId path with no participant row. It can be exercised now
+        by hand (curl with a Cookie header). A cookie sent with an empty value arrives as ""
+        rather than null and would currently be written as a blank user_id - not yet guarded.
+        Home's create handler also still doesn't check res.ok, so a failed insert would
+        navigate to /room/undefined.
+        The in-memory map is still the only thing roomExists, getUpdates and appendUpdate
+        read: the DB row is written but never read back, so a room created before a backend
+        restart still 404s afterward. The cache-miss fallback, join upsert, and recent-rooms
+        query are the remaining endpoints.
+
 ## Sep 7 2026
 
 Added:

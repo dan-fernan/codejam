@@ -15,11 +15,16 @@ public class RoomService {
     // ConcurrentHashMap allows multiple threads to access the same map,
     // while locking each bucket to ensure serialized updates to the same bucket
     // data, not simultaneous ones. Otherwise would have race conditions/lost updates
-
+    private final RoomRepository roomRepository;
     private final Map<String, List<byte[]>> rooms = new ConcurrentHashMap<>(); 
 
-    public String createRoom() {
+    public RoomService(RoomRepository roomRepository) {
+        this.roomRepository = roomRepository;
+    }
+
+    public String createRoom(String userId) {
         String id = UUID.randomUUID().toString();
+        roomRepository.createRoom(id, userId); // throws on failure, nothing would get cached
         rooms.put(id, Collections.synchronizedList(new ArrayList<>()));
         return id;
     }
