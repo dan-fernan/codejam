@@ -1,3 +1,24 @@
+## Sep 27 2027
+
+Added:
+    /session endpoint - 
+        Used to generate a UUID to store in a user's browser cookies. Creates a UUID then passes it 
+        through a cookie builder, adding rules about that cookie (factory pattern). Then sends an empty
+        JSON response with the Set-Cookie header, which is written to the browser's internal cookie store.
+
+    `CookieConsent.tsx` -
+        A component that renders on the homescreen either allowing a cookie (fires off a POST req to /session)
+        or declines the cookie (stores a flag in local storage, so as not to ask the user again).
+
+## Sep 26 2026
+
+Added:
+    RoomRepository.joinRoom - 
+        An endpoint used to insert the candidate key (userId, roomId) into room_participants,
+        in order to tie users to their previously accessed rooms. This function gets injected into
+        RoomService, which is then injected into the controller. This allows easy and abstracted
+        access of join logic.
+
 ## Sep 24 2026
 
 Added:
@@ -8,7 +29,7 @@ Added:
         room's participant rows are cleaned up automatically when the room is evicted).
         bytes is nullable because a room is inserted empty at creation and only gets a
         snapshot later. There's deliberately no created_at - eviction is idle-based, which
-        only needs updated_at - and no users table, since userId is an anonymous
+        only needs updated_at - and no users table, since userId is an anonymous    
         cookie-issued identifier with nothing to reference. Created by hand with psql, not
         via a migration script.
     RoomRepository (backend) -

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CodejamJarFlat, { type Mood } from './CodejamJarFlat'
 import { C, FONT_UI, FONT_MONO } from './theme'
+import CookieConsent from './CookieConsent'
 
 const HOP_MS = 740
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -69,7 +70,8 @@ function Home() {
                 gap: 20,
                 padding: '32px 16px',
             }}
-        >
+        >   
+            <CookieConsent />
             <h1
                 style={{
                     margin: 0,
