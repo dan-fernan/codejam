@@ -29,6 +29,10 @@ public class RoomService {
         return id;
     }
 
+    public boolean joinRoom(String roomId, String userId) {
+        return roomRepository.joinRoom(roomId, userId);
+    }
+
     public boolean roomExists(String id) {
         return rooms.containsKey(id);
     }

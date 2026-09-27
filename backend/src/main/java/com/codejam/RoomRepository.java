@@ -2,6 +2,7 @@ package com.codejam;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component 
@@ -20,5 +21,18 @@ public class RoomRepository {
         if (userId != null) {
             jdbc.update("INSERT INTO room_participants (user_id, room_id) VALUES (?, ?)", userId, roomId);
         }
+    }
+
+    @Transactional 
+    public boolean joinRoom(String roomId, String userId) {
+        Boolean exists = jdbc.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM rooms WHERE id = ?)", Boolean.class, roomId);
+        if (!exists) return false;
+        if (userId != null) {
+            jdbc.update(
+                "INSERT INTO room_participants (user_id, room_id) VALUES (?, ?) " +
+                "ON CONFLICT (user_id, room_id) DO NOTHING", userId, roomId);
+        }
+        return true;
     }
 }
