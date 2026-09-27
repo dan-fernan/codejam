@@ -27,6 +27,11 @@ public class RoomController {
         return new CreateRoomResponse(service.createRoom(userId));
     }
 
+    @PostMapping("/rooms/{id}/join")
+    public ResponseEntity<Void> joinRoom(@PathVariable String id, @CookieValue(name = "userId", required = false) String userId) {
+        return service.joinRoom(id, userId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    }
+
     @GetMapping("/rooms/{id}")
     public ResponseEntity<List<byte[]>> getRoom(@PathVariable String id) {
         if (!service.roomExists(id)) {
