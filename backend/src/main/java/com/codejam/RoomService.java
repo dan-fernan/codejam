@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.oblac.nomen.Nomen;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,9 +23,12 @@ public class RoomService {
         this.roomRepository = roomRepository;
     }
 
-    public String createRoom(String userId) {
+    public String createRoom(String userId, String alias) {
         String id = UUID.randomUUID().toString();
-        roomRepository.createRoom(id, userId); // throws on failure, nothing would get cached
+        String resolvedAlias = (alias == null || alias.isBlank())
+            ? Nomen.est().adjective().animal().withSeparator("-").get()
+            : alias;
+        roomRepository.createRoom(id, userId, resolvedAlias); // throws on failure, nothing would get cached
         rooms.put(id, Collections.synchronizedList(new ArrayList<>()));
         return id;
     }

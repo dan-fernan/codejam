@@ -15,8 +15,8 @@ public class RoomRepository {
     @Transactional
     // Essentially creates a proxy interceptor that allows all jdbc updates in this method to be binded to the same thread.
     // The proxy only commits if the method returns normally, which enables the transactional behavior
-    public void createRoom(String roomId, String userId) {
-        jdbc.update("INSERT INTO rooms (id) VALUES (?)", roomId);
+    public void createRoom(String roomId, String userId, String alias) {
+        jdbc.update("INSERT INTO rooms (id, alias) VALUES (?, ?)", roomId, alias);
         if (userId != null) {
             jdbc.update("INSERT INTO room_participants (user_id, room_id) VALUES (?, ?)", userId, roomId);
         }
