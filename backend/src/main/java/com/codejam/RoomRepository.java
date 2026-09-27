@@ -30,7 +30,7 @@ public class RoomRepository {
         if (userId != null) {
             jdbc.update(
                 "INSERT INTO room_participants (user_id, room_id) VALUES (?, ?) " +
-                "ON CONFLICT (user_id, room_id) DO NOTHING", userId, roomId);
+                "ON CONFLICT (user_id, room_id) DO UPDATE SET last_joined_at = now()", userId, roomId);
         }
         return true;
     }

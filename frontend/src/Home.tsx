@@ -10,6 +10,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 function Home() {
     const [creating, setCreating] = useState(false)
     const [joining, setJoining] = useState(false)
+    const [alias, setAlias] = useState('')
     const [roomId, setRoomId] = useState('')
     const [joinError, setJoinError] = useState('')
     const [mood, setMood] = useState<Mood>('happy')
@@ -27,7 +28,12 @@ function Home() {
         setCreating(true)
         pressJar()
         try {
-            const res = await fetch('http://localhost:8080/rooms', { method: 'POST', credentials: 'include'})
+            const res = await fetch('http://localhost:8080/rooms', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias: alias.trim().replace(/^-+|-+$/g, '') }),
+            })
             const room = await res.json()
             setHopSignal((s) => s + 1)
             await wait(HOP_MS)
@@ -86,26 +92,53 @@ function Home() {
             </h1>
 
             <CodejamJarFlat mood={mood} size={200} hopSignal={hopSignal} />
-
-            <button
-                onClick={createRoom}
-                disabled={creating}
+            <div
                 style={{
-                    fontFamily: FONT_UI,
-                    fontWeight: 700,
-                    fontSize: 16,
-                    color: C.white,
-                    background: C.jam,
-                    border: 'none',
-                    borderRadius: 999,
-                    padding: '12px 28px',
-                    cursor: creating ? 'default' : 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
                     animation: tilting ? 'cjf-tilt 400ms ease' : 'none',
                     transformOrigin: '50% 100%',
                 }}
             >
-                {creating ? 'Creating...' : 'Create Room'}
-            </button>
+                <input
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value.replace(/[\s-]+/g, '-'))}
+                    placeholder="alias (optional)"
+                    maxLength={40}
+                    style={{
+                        fontFamily: FONT_MONO,
+                        fontSize: 15,
+                        color: C.ink,
+                        background: C.paper,
+                        border: '2px solid transparent',
+                        borderBottom: `2px solid ${C.jam}`,
+                        borderRadius: '8px 8px 0 0',
+                        padding: '10px 14px',
+                        outline: 'none',
+                        width: 180,
+                    }}
+                />
+
+                <button
+                    onClick={createRoom}
+                    disabled={creating}
+                    style={{
+                        fontFamily: FONT_UI,
+                        fontWeight: 700,
+                        fontSize: 15,
+                        color: C.white,
+                        background: C.jam,
+                        border: 'none',
+                        borderRadius: '0 0 8px 8px',
+                        padding: '8px 28px',
+                        cursor: creating ? 'default' : 'pointer',
+                        width: 180,
+                    }}
+                >
+                    {creating ? 'Creating...' : 'Create Room'}
+                </button>
+            </div>
 
             <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.lidTop }}>or join an existing one</div>
 
