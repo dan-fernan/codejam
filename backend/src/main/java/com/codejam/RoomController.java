@@ -15,6 +15,8 @@ import java.util.UUID;
 import java.time.Duration;
 import java.util.List;
 
+import com.codejam.RoomRepository.RecentRoom;;
+
 @RestController
 @CrossOrigin(origins="http://localhost:5173", allowCredentials = "true") // allows cross-origin traffic, then enables pages from 5173 to read 8080's responses, cookies included
 public class RoomController {
@@ -63,5 +65,10 @@ public class RoomController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(service.getUpdates(id));
+    }
+
+    @GetMapping("/rooms/recent")
+    public List<RecentRoom> getRecentRooms(@CookieValue(name = "userId", required = false) String userId) {
+        return service.getRecentRooms(userId);
     }
 }

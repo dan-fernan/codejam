@@ -10,6 +10,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.oblac.nomen.Nomen;
 import org.springframework.stereotype.Service;
 
+import com.codejam.RoomRepository.RecentRoom; 
+
 @Service
 public class RoomService {
 
@@ -35,6 +37,11 @@ public class RoomService {
 
     public boolean joinRoom(String roomId, String userId) {
         return roomRepository.joinRoom(roomId, userId);
+    }
+
+    public List<RecentRoom> getRecentRooms(String userId) {
+        if (userId == null) return List.of();
+        return roomRepository.getRecentRooms(userId);
     }
 
     public boolean roomExists(String id) {
