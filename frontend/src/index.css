@@ -22,3 +22,28 @@ input,
 select {
   font-family: inherit;
 }
+
+/* Recent-rooms panel scrollbar - C.jam thumb over a C.glassNeck track, Firefox via
+   scrollbar-width/-color, WebKit (Chrome/Safari/Edge) via the ::-webkit-scrollbar family */
+.recent-rooms-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #ff4b57 #dfe9ec; /* C.jam, C.glassNeck */
+}
+
+.recent-rooms-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.recent-rooms-scroll::-webkit-scrollbar-track {
+  background: #dfe9ec; /* C.glassNeck */
+  border-radius: 999px;
+}
+
+.recent-rooms-scroll::-webkit-scrollbar-thumb {
+  background: #ff4b57; /* C.jam */
+  border-radius: 999px;
+}
+
+.recent-rooms-scroll::-webkit-scrollbar-thumb:hover {
+  background: #e93348; /* C.jamDeep */
+}

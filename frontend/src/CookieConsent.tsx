@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { C, FONT_UI } from './theme'
 
-const STORAGE_KEY = 'cookieConsent'
+export const STORAGE_KEY = 'cookieConsent'
 
 function CookieConsent() {
     const [visible, setVisible] = useState(false)

@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -14,11 +15,14 @@ import java.util.UUID;
 import java.time.Duration;
 import java.util.List;
 
+import com.codejam.RoomRepository.RecentRoom;;
+
 @RestController
 @CrossOrigin(origins="http://localhost:5173", allowCredentials = "true") // allows cross-origin traffic, then enables pages from 5173 to read 8080's responses, cookies included
 public class RoomController {
 
     private record CreateRoomResponse(String id) {}
+    private record CreateRoomRequest(String alias) {}
 
     private final RoomService service;
 
@@ -27,8 +31,11 @@ public class RoomController {
     }
 
     @PostMapping("/rooms")
-    public CreateRoomResponse createRoom(@CookieValue(name = "userId", required = false) String userId) {
-        return new CreateRoomResponse(service.createRoom(userId));
+    public CreateRoomResponse createRoom(
+            @RequestBody(required = false) CreateRoomRequest request,
+            @CookieValue(name = "userId", required = false) String userId) {
+        String alias = request != null ? request.alias() : null;
+        return new CreateRoomResponse(service.createRoom(userId, alias));
     }
 
     @PostMapping("/rooms/{id}/join")
@@ -58,5 +65,10 @@ public class RoomController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(service.getUpdates(id));
+    }
+
+    @GetMapping("/rooms/recent")
+    public List<RecentRoom> getRecentRooms(@CookieValue(name = "userId", required = false) String userId) {
+        return service.getRecentRooms(userId);
     }
 }
