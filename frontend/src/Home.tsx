@@ -125,143 +125,186 @@ function Home() {
             style={{
                 minHeight: '100vh',
                 display: 'flex',
-                flexDirection: 'row',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 40,
+                gap: 20,
                 padding: '32px 16px',
             }}
         >
             <CookieConsent />
 
             {recentRooms.length > 0 && (
-                <div
-                    className="recent-rooms-scroll"
-                    style={{
-                        background: C.paper,
-                        borderRadius: 12,
-                        padding: 14,
-                        width: RECENT_PANEL_WIDTH,
-                        flexShrink: 0,
-                        maxHeight: 320,
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 10,
-                    }}
-                >
-                    <div style={{ fontFamily: FONT_UI, fontWeight: 700, fontSize: 13, color: C.ink }}>
-                        Recent Rooms
-                    </div>
-                    <ul
+                <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 900 }}>
+                    <div
+                        className="recent-rooms-scroll"
                         style={{
-                            listStyle: 'none',
-                            margin: 0,
-                            padding: 0,
+                            background: C.paper,
+                            borderRadius: 12,
+                            padding: 14,
+                            width: RECENT_PANEL_WIDTH,
+                            maxHeight: 320,
+                            overflowY: 'auto',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 8,
+                            gap: 10,
                         }}
                     >
-                        {recentRooms.map((room) => (
-                            <li
-                                key={room.id}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    gap: 8,
-                                    background: C.white,
-                                    borderRadius: 8,
-                                    padding: '8px 10px',
-                                }}
-                            >
-                                <div style={{ minWidth: 0 }}>
-                                    <div
-                                        style={{
-                                            fontFamily: FONT_MONO,
-                                            fontSize: 13,
-                                            color: C.ink,
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        {room.alias}
-                                    </div>
-                                    <div style={{ fontFamily: FONT_UI, fontSize: 11, color: C.lidTop }}>
-                                        {formatDate(room.lastJoinedAt)}
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => handleJoinRecent(room.id)}
+                        <div style={{ fontFamily: FONT_UI, fontWeight: 700, fontSize: 13, color: C.ink }}>
+                            Recent Rooms
+                        </div>
+                        <ul
+                            style={{
+                                listStyle: 'none',
+                                margin: 0,
+                                padding: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                            }}
+                        >
+                            {recentRooms.map((room) => (
+                                <li
+                                    key={room.id}
                                     style={{
-                                        fontFamily: FONT_UI,
-                                        fontWeight: 700,
-                                        fontSize: 12,
-                                        color: C.white,
-                                        background: C.jam,
-                                        border: 'none',
-                                        borderRadius: 999,
-                                        padding: '6px 12px',
-                                        cursor: 'pointer',
-                                        flexShrink: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 8,
+                                        background: C.white,
+                                        borderRadius: 8,
+                                        padding: '8px 10px',
                                     }}
                                 >
-                                    Join
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div
+                                            style={{
+                                                fontFamily: FONT_MONO,
+                                                fontSize: 13,
+                                                color: C.ink,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {room.alias}
+                                        </div>
+                                        <div style={{ fontFamily: FONT_UI, fontSize: 11, color: C.lidTop }}>
+                                            {formatDate(room.lastJoinedAt)}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleJoinRecent(room.id)}
+                                        style={{
+                                            fontFamily: FONT_UI,
+                                            fontWeight: 700,
+                                            fontSize: 12,
+                                            color: C.white,
+                                            background: C.jam,
+                                            border: 'none',
+                                            borderRadius: 999,
+                                            padding: '6px 12px',
+                                            cursor: 'pointer',
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        Join
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                <h1
-                    style={{
-                        margin: 0,
-                        fontFamily: FONT_UI,
-                        fontWeight: 800,
-                        fontSize: 32,
-                        color: C.ink,
-                        letterSpacing: -0.5,
-                    }}
-                >
-                    Code<span style={{ color: C.jam }}>Jam</span>
-                </h1>
+            <h1
+                style={{
+                    margin: 0,
+                    fontFamily: FONT_UI,
+                    fontWeight: 800,
+                    fontSize: 32,
+                    color: C.ink,
+                    letterSpacing: -0.5,
+                }}
+            >
+                Code<span style={{ color: C.jam }}>Jam</span>
+            </h1>
 
-                <CodejamJarFlat mood={mood} size={200} hopSignal={hopSignal} />
-                <div
+            <CodejamJarFlat mood={mood} size={200} hopSignal={hopSignal} />
+            <div
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    animation: tilting ? 'cjf-tilt 400ms ease' : 'none',
+                    transformOrigin: '50% 100%',
+                }}
+            >
+                <input
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value.replace(/[\s-]+/g, '-'))}
+                    placeholder="alias (optional)"
+                    maxLength={40}
                     style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        animation: tilting ? 'cjf-tilt 400ms ease' : 'none',
-                        transformOrigin: '50% 100%',
+                        fontFamily: FONT_MONO,
+                        fontSize: 15,
+                        color: C.ink,
+                        background: C.paper,
+                        border: '2px solid transparent',
+                        borderBottom: `2px solid ${C.jam}`,
+                        borderRadius: '8px 8px 0 0',
+                        padding: '10px 14px',
+                        outline: 'none',
+                        width: 180,
+                    }}
+                />
+
+                <button
+                    onClick={createRoom}
+                    disabled={creating}
+                    style={{
+                        fontFamily: FONT_UI,
+                        fontWeight: 700,
+                        fontSize: 15,
+                        color: C.white,
+                        background: C.jam,
+                        border: 'none',
+                        borderRadius: '0 0 8px 8px',
+                        padding: '8px 28px',
+                        cursor: creating ? 'default' : 'pointer',
+                        width: 180,
                     }}
                 >
+                    {creating ? 'Creating...' : 'Create Room'}
+                </button>
+            </div>
+
+            <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.lidTop }}>or join an existing one</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
                     <input
-                        value={alias}
-                        onChange={(e) => setAlias(e.target.value.replace(/[\s-]+/g, '-'))}
-                        placeholder="alias (optional)"
-                        maxLength={40}
+                        value={roomId}
+                        onChange={(e) => setRoomId(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
+                        placeholder="room code"
                         style={{
                             fontFamily: FONT_MONO,
                             fontSize: 15,
                             color: C.ink,
                             background: C.paper,
-                            border: '2px solid transparent',
-                            borderBottom: `2px solid ${C.jam}`,
-                            borderRadius: '8px 8px 0 0',
+                            border: `2px solid ${joinError ? C.mouth : 'transparent'}`,
+                            borderBottom: `2px solid ${joinError ? C.mouth : C.jam}`,
+                            borderRadius: 8,
                             padding: '10px 14px',
                             outline: 'none',
                             width: 180,
                         }}
                     />
-
                     <button
-                        onClick={createRoom}
-                        disabled={creating}
+                        onClick={joinRoom}
+                        disabled={joining || !roomId.trim()}
                         style={{
                             fontFamily: FONT_UI,
                             fontWeight: 700,
@@ -269,66 +312,19 @@ function Home() {
                             color: C.white,
                             background: C.jam,
                             border: 'none',
-                            borderRadius: '0 0 8px 8px',
-                            padding: '8px 28px',
-                            cursor: creating ? 'default' : 'pointer',
-                            width: 180,
+                            borderRadius: 999,
+                            padding: '10px 22px',
+                            cursor: joining || !roomId.trim() ? 'default' : 'pointer',
+                            opacity: !roomId.trim() ? 0.6 : 1,
                         }}
                     >
-                        {creating ? 'Creating...' : 'Create Room'}
+                        {joining ? 'Joining...' : 'Join Room'}
                     </button>
                 </div>
-
-                <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.lidTop }}>or join an existing one</div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <input
-                            value={roomId}
-                            onChange={(e) => setRoomId(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
-                            placeholder="room code"
-                            style={{
-                                fontFamily: FONT_MONO,
-                                fontSize: 15,
-                                color: C.ink,
-                                background: C.paper,
-                                border: `2px solid ${joinError ? C.mouth : 'transparent'}`,
-                                borderBottom: `2px solid ${joinError ? C.mouth : C.jam}`,
-                                borderRadius: 8,
-                                padding: '10px 14px',
-                                outline: 'none',
-                                width: 180,
-                            }}
-                        />
-                        <button
-                            onClick={joinRoom}
-                            disabled={joining || !roomId.trim()}
-                            style={{
-                                fontFamily: FONT_UI,
-                                fontWeight: 700,
-                                fontSize: 15,
-                                color: C.white,
-                                background: C.jam,
-                                border: 'none',
-                                borderRadius: 999,
-                                padding: '10px 22px',
-                                cursor: joining || !roomId.trim() ? 'default' : 'pointer',
-                                opacity: !roomId.trim() ? 0.6 : 1,
-                            }}
-                        >
-                            {joining ? 'Joining...' : 'Join Room'}
-                        </button>
-                    </div>
-                    {joinError && (
-                        <p style={{ margin: 0, fontFamily: FONT_UI, fontSize: 13, color: C.mouth }}>{joinError}</p>
-                    )}
-                </div>
+                {joinError && (
+                    <p style={{ margin: 0, fontFamily: FONT_UI, fontSize: 13, color: C.mouth }}>{joinError}</p>
+                )}
             </div>
-
-            {recentRooms.length > 0 && (
-                <div style={{ width: RECENT_PANEL_WIDTH, flexShrink: 0 }} aria-hidden="true" />
-            )}
         </div>
     )
 }

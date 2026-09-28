@@ -47,7 +47,7 @@ public class RoomRepository {
             "JOIN rooms r ON r.id = rp.room_id " +
             "WHERE rp.user_id = ? " +
             "ORDER BY rp.last_joined_at DESC " +
-            "LIMIT 10",
+            "LIMIT 5",
             (rs, rowNum) -> new RecentRoom(
                 rs.getString("id"),
                 rs.getString("alias"),
