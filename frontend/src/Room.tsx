@@ -6,6 +6,7 @@ import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
 import CodejamJarFlat, { type Mood } from './CodejamJarFlat'
 import { C, FONT_UI, FONT_MONO, flavorForClientId } from './theme'
+import { useNavigate } from 'react-router-dom'
 
 const LANGUAGES = ['python', 'javascript']
 const DOC_UPDATE = 0
@@ -27,6 +28,7 @@ function Room() {
   const [running, setRunning] = useState(false)
   const [ready, setReady] = useState(false)
   const [mood, setMood] = useState<Mood>('sleepy')
+  const navigate = useNavigate()
 
   const docRef = useRef<Y.Doc | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -37,6 +39,10 @@ function Room() {
   // typing activity from stomping on that mood until it's done
   const moodLockRef = useRef(false)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  const homeClickHandler = () => {
+    navigate('/')
+  }
 
   function markActive() {
     if (moodLockRef.current) return
@@ -265,6 +271,15 @@ function Room() {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button 
+            onClick={homeClickHandler} 
+            style = {{
+              ...pillStyle, 
+              color: C.white, 
+              background: C.jam }}
+          >
+            Home
+          </button>
           <span style={pillStyle}>{roomId}</span>
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <select
