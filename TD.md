@@ -4,11 +4,16 @@ Notes from the architecture discussion. Nothing here is implemented yet.
 
 ## Proposal
 
-Move the real-time layer to the Node sidecar and keep Spring for durable state.
+Two co-equal services, not a backend-plus-helper: Node is the real-time layer, Spring is the
+persistence layer. All permanent writes are orchestrated by Spring alone, Node never touches
+Postgres directly.
 
-- **Node (`sidecar/`)** owns Yjs docs, WebSocket connections, awareness, and a write-back cache.
-- **Spring (`backend/`)** owns persistence (cache-miss loads, writes, room/participant records) and
-  sandboxed code execution (`DockerRunner`, `/execute`).
+- **Node** (real-time layer, code lives in `sidecar/` — the directory name predates this framing and
+  is just where the code happens to sit) owns Yjs docs, WebSocket connections, awareness, and a
+  write-back cache.
+- **Spring** (persistence layer, `backend/`) owns persistence (cache-miss loads, writes,
+  room/participant records) and sandboxed code execution (`DockerRunner`, `/execute`). It is the
+  sole Postgres client in the system.
 
 ### Why
 
@@ -22,13 +27,10 @@ Move the real-time layer to the Node sidecar and keep Spring for durable state.
 
 ## Decisions to make
 
-1. **Who writes to Postgres?** Two writers exist today: Spring's `RoomRepository` and
-   `sidecar/src/db.ts` (`writeRoomBytes` upserts `rooms.bytes`).
-   - Leaning: Spring is the only DB client. Delete `db.ts`; Node calls Spring over HTTP
-     (e.g. `GET /rooms/{id}/state` on a miss, `PUT /rooms/{id}/state` on flush). One extra hop, negligible
-     because flushes are debounced.
-   - Alternative: Spring owns metadata, Node writes the `bytes` blob directly. Simpler, but splits
-     ownership of one table.
+1. ~~Who writes to Postgres?~~ **Decided: Spring is the only DB client.** Two writers exist in code
+   today (Spring's `RoomRepository` and `sidecar/src/db.ts`'s `writeRoomBytes`), but `db.ts` is dead
+   going forward, Node calls Spring over HTTP instead (e.g. `GET /rooms/{id}/state` on a miss,
+   `PUT /rooms/{id}/state` on flush). One extra hop, negligible because flushes are debounced.
 2. **Room entry shape.** The `RoomWatcher` stub in `sidecar/src/index.ts` has one `ws` per room, which
    looks like the sidecar as a client of Spring's relay. Node is now the server, so use something like
    `{ doc, awareness, sockets: Set<WebSocket>, dirty, flushTimer }`.
@@ -85,9 +87,10 @@ current layout if reconsidering it as a fallback.)
 
 ## Changes by component
 
-**Sidecar (Node)**
+**Node (real-time layer, `sidecar/`)**
 - WebSocket server with the room lifecycle above; HTTP client to Spring for load/flush.
-- Remove `db.ts` if Spring is the only DB client.
+- Remove `db.ts` and the `pg` dependency — Spring is the only DB client, Node has no business talking
+  to Postgres at all.
 
 **Backend (Spring)**
 - Keep: `DockerRunner`, `ExecutionService`, `ExecutionController`, `RoomRepository`, room/participant
@@ -106,8 +109,38 @@ current layout if reconsidering it as a fallback.)
   REST bootstrap + client-side `Y.mergeUpdates`.
 - Frontend talks to two origins: Node for the socket, Spring for REST.
 
+## Code execution: Docker now, Lambda considered
+
+`DockerRunner`/`ExecutionService` run `docker run` directly against Spring's own host, which needs privileged
+Docker access — this is what ruled out Fargate/App Runner/Lightsail Containers for Java specifically (confirmed:
+Fargate forbids privileged mode and socket mounting). Moving execution to AWS Lambda (one container-image function
+per language, invoked via the AWS SDK) removes that requirement entirely: Java stops needing a privileged Docker
+host, which reopens those cheaper serverless-container platforms for Java's own hosting.
+
+Trade-offs to keep in mind if this gets built:
+- No clean equivalent for `--network=none` (needs a VPC with no outbound route) or `--pids-limit` (Lambda's
+  per-invocation resource ceiling is the closest analog, not a process-count cap).
+- Cold starts on container-image Lambdas are real; mitigations (smaller images, provisioned concurrency) have
+  their own cost.
+- `ExecutionService`'s fixed thread pool of 10 stops protecting local host resources and becomes just an
+  HTTP-call throttle against Lambda instead.
+
+Not scheduled — a direction for when `DockerRunner` needs revisiting, not a current task.
+
+## Real-time layer scaling: y-redis / y/hub considered and deferred
+
+Both let multiple Node processes share room state via Redis Streams (no single process owns a room, no sticky
+routing needed) — a direct answer to the "single authoritative process per room" item above. Deferred because:
+- Solves horizontal scaling of the real-time layer, which CodeJam doesn't need at TIP/hobby scale — one Node
+  process holds this fine.
+- `y-redis` (the original, from the Yjs author) persists to Postgres; `y/hub` (the newer, actively-documented
+  successor) persists to S3 or Postgres and is beta, dual-licensed AGPL/proprietary — either reopens "who writes
+  to Postgres" or adds a licensing question.
+- Free tiers exist (Upstash: 256MB/500K commands/mo), so cost isn't the blocker here — need is.
+
+Worth revisiting only if CodeJam actually needs multiple real-time server processes.
+
 ## Open items
 
-- Decide the DB-writer question above.
 - Pick the flush debounce interval and idle-eviction timeout.
 - Update the README (stack, architecture, "Persistence" next-up item) once implemented.

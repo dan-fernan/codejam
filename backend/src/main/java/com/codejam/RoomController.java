@@ -6,10 +6,12 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.http.MediaType;
 
 import java.util.UUID;
 import java.time.Duration;
@@ -58,6 +60,12 @@ public class RoomController {
             .header(HttpHeaders.SET_COOKIE, cookie.toString()) // serializes the cookie header to hold the content of our built cookie object
             .build();
     }
+    @GetMapping(value = "/rooms/{id}/state", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> getState(@PathVariable String id) {
+        return service.loadState(id)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+    }
 
     @GetMapping("/rooms/{id}")
     public ResponseEntity<List<byte[]>> getRoom(@PathVariable String id) {
@@ -70,5 +78,12 @@ public class RoomController {
     @GetMapping("/rooms/recent")
     public List<RecentRoom> getRecentRooms(@CookieValue(name = "userId", required = false) String userId) {
         return service.getRecentRooms(userId);
+    }
+
+    @PutMapping(value = "/rooms/{id}/state", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<Void> putState(@PathVariable String id, @RequestBody byte[] bytes) {
+        return service.saveState(id, bytes)
+            ? ResponseEntity.noContent().build()
+            : ResponseEntity.notFound().build();
     }
 }

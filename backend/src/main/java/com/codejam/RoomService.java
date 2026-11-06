@@ -6,11 +6,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
 
 import com.oblac.nomen.Nomen;
 import org.springframework.stereotype.Service;
 
-import com.codejam.RoomRepository.RecentRoom; 
+import com.codejam.RoomRepository.RecentRoom;
 
 @Service
 public class RoomService {
@@ -19,7 +20,7 @@ public class RoomService {
     // while locking each bucket to ensure serialized updates to the same bucket
     // data, not simultaneous ones. Otherwise would have race conditions/lost updates
     private final RoomRepository roomRepository;
-    private final Map<String, List<byte[]>> rooms = new ConcurrentHashMap<>(); 
+    private final Map<String, List<byte[]>> rooms = new ConcurrentHashMap<>();
 
     public RoomService(RoomRepository roomRepository) {
         this.roomRepository = roomRepository;
@@ -56,5 +57,13 @@ public class RoomService {
         if (updates != null) {
             updates.add(update);
         }
+    }
+
+    public Optional<byte[]> loadState(String roomId) {
+        return roomRepository.loadState(roomId);
+    }
+
+    public boolean saveState(String roomId, byte[] bytes) {
+        return roomRepository.saveState(roomId, bytes);
     }
 }

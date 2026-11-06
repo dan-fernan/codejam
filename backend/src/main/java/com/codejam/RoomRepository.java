@@ -2,12 +2,13 @@ package com.codejam;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-@Component 
+@Component
 public class RoomRepository {
     private final JdbcTemplate jdbc;
 
@@ -27,7 +28,7 @@ public class RoomRepository {
         }
     }
 
-    @Transactional 
+    @Transactional
     public boolean joinRoom(String roomId, String userId) {
         Boolean exists = jdbc.queryForObject(
             "SELECT EXISTS (SELECT 1 FROM rooms WHERE id = ?)", Boolean.class, roomId);
@@ -55,5 +56,22 @@ public class RoomRepository {
             ),
             userId
         );
+    }
+
+    public Optional<byte[]> loadState(String roomId) {
+        List<byte[]> rows = jdbc.query(
+            "SELECT bytes FROM rooms WHERE id = ?",
+            (rs, rowNum) -> {
+                byte[] b = rs.getBytes("bytes");
+                return b != null ? b : new byte[0];
+            },
+            roomId);
+        return rows.stream().findFirst();
+    }
+
+    public boolean saveState(String roomId, byte[] bytes) {
+        int updated = jdbc.update(
+            "UPDATE rooms SET bytes = ?, updated_at = now() WHERE id = ?", bytes, roomId);
+        return updated > 0;
     }
 }
