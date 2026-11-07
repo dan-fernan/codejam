@@ -7,7 +7,29 @@ import { handleMessage, send, syncStep1Message, awarenessMessage } from './proto
 const PORT = Number(process.env.PORT)
 const wss = new WebSocketServer({ port: PORT })
 
+const HEARTBEAT_MS = 15_000
+const alive = new WeakSet<WebSocket>() // sockets that answered since last ping
+
+// every 15s: terminate any socket that didn't answer the previous ping, then ping the rest.
+// a dead socket is detected within 15-30s
+const heartbeat = setInterval(() => {
+  for (const socket of wss.clients) {
+    if (!alive.has(socket)) {
+      socket.terminate() // fires 'close' -> normal cleanup
+      continue
+    }
+    alive.delete(socket)
+    socket.ping()
+  }
+}, HEARTBEAT_MS)
+
+wss.on('close', () => clearInterval(heartbeat))
+
 wss.on('connection', async (socket: WebSocket, req) => {
+
+  alive.add(socket)
+  socket.on('pong', () => alive.add(socket))
+  socket.on('error', (err) => console.error('socket error:', err.message)) // an 'error' with no listener crashes the process
   // WebsocketProvider connects to `${serverUrl}/${roomName}`, so the path is /<roomId>
   const roomId = decodeURIComponent((req.url ?? '/').split('?')[0].slice(1))
   if (!roomId) return socket.close(4400, 'missing room id')
