@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type CSSProperties } from 'react'
 import { useParams } from 'react-router-dom'
 import { MonacoBinding } from 'y-monaco'
 import Editor, { type OnMount } from '@monaco-editor/react'
@@ -10,6 +10,7 @@ import { C, FONT_UI, FONT_MONO, flavorForClientId } from './theme'
 import { useNavigate } from 'react-router-dom'
 
 const LANGUAGES = ['python', 'javascript']
+const FILE_EXT: Record<string, string> = { python: 'py', javascript: 'js' }
 const IDLE_MS = 6000
 const WINK_MS = 1500
 // stable object identity: a new literal on every render makes Monaco re-apply options
@@ -17,6 +18,20 @@ const EDITOR_OPTIONS = { padding: { top: 16 } }
 
 // same-origin: Vite's proxy locally, nginx in production (both strip /ws before forwarding to Node)
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+
+type MonacoEditor = Parameters<OnMount>[0]
+
+// One row in the "In this room" panel, derived from awareness
+interface Participant {
+  clientId: number
+  name: string
+  color: string
+  line: number | null // the line their cursor is on; null until their editor reports a cursor
+  isYou: boolean
+}
+
+// Console header: what the last run did. Spring's ExecutionResult already returns exitCode + timedOut.
+type ExitStatus = 'idle' | 'running' | 'failed' | { code: number; timedOut: boolean }
 
 function Room() {
   const { roomId } = useParams()
@@ -27,13 +42,19 @@ function Room() {
   const [mood, setMood] = useState<Mood>('sleepy')
   const [notFound, setNotFound] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [hopSignal, setHopSignal] = useState(0)
+  const [exitStatus, setExitStatus] = useState<ExitStatus>('idle')
+  const [participants, setParticipants] = useState<Participant[]>([])
   const navigate = useNavigate()
 
   const docRef = useRef<Y.Doc | null>(null)
   const providerRef = useRef<WebsocketProvider | null>(null)
   const bindingRef = useRef<MonacoBinding | null>(null)
   const awarenessRef = useRef<Awareness | null>(null)
+  const editorRef = useRef<MonacoEditor | null>(null)
   const cursorStyleRef = useRef<HTMLStyleElement | null>(null)
+  // lets handleEditorMount recompute participants (line numbers need the editor's model)
+  const refreshParticipantsRef = useRef<() => void>(() => {})
   // true while a run is in flight or its "wink" result is still showing - keeps
   // typing activity from stomping on that mood until it's done
   const moodLockRef = useRef(false)
@@ -125,6 +146,47 @@ function Room() {
         })
         cursorStyleEl.textContent = rules.join('\n')
       }
+
+      // "In this room": everyone in awareness, with the line their cursor is on.
+      // y-monaco stores each cursor as a Yjs relative position (state.selection.head); converting it
+      // to a line is the same step y-monaco does to draw remote cursors: relative → absolute index →
+      // Monaco line.
+      function refreshParticipants() {
+        if (cancelled) return
+        const model = editorRef.current?.getModel() ?? null
+        const list: Participant[] = []
+        awareness.getStates().forEach((state, clientID) => {
+          const user = state.user as { name?: string; color?: string } | undefined
+          if (!user) return // e.g. a client mid-leave
+          let line: number | null = null
+          const head = (state.selection as { head?: unknown } | undefined)?.head
+          if (model && head) {
+            try {
+              const abs = Y.createAbsolutePositionFromRelativePosition(head as Y.RelativePosition, doc)
+              if (abs) line = model.getPositionAt(abs.index).lineNumber
+            } catch {
+              // position refers to content we haven't received yet - leave the line blank
+            }
+          }
+          list.push({
+            clientId: clientID,
+            name: user.name ?? 'Guest',
+            color: user.color ?? C.lidTop,
+            line,
+            isYou: clientID === doc.clientID,
+          })
+        })
+        list.sort((a, b) => Number(b.isYou) - Number(a.isYou)) // you first
+        // runs on every keystroke: only re-render when someone joined, left, or changed line
+        setParticipants((prev) =>
+          prev.length === list.length && prev.every((p, i) =>
+            p.clientId === list[i].clientId && p.line === list[i].line &&
+            p.name === list[i].name && p.color === list[i].color)
+            ? prev
+            : list)
+      }
+      refreshParticipantsRef.current = refreshParticipants
+
       // 'change' (not 'update') is deep-equality filtered by y-protocols, so a heartbeat
       // resend of unchanged state never reaches here and never re-triggers the label
       awareness.on('change', ({ added, updated }: { added: number[]; updated: number[]; removed: number[] }) => {
@@ -138,15 +200,21 @@ function Room() {
           }, 2000))
         })
         updateCursorStyles()
+        refreshParticipants() // joins, leaves, and cursor moves
       })
+      refreshParticipants()
 
       const ymap = doc.getMap('metadata')
       setLanguage((ymap.get('language') as string) || 'python')
       ymap.observe(() => setLanguage((ymap.get('language') as string) || 'python'))
 
-      // both local edits and remote peers typing count as "someone's active"
-      // (sending local edits is now the provider's job)
-      doc.on('update', () => markActive())
+      doc.on('update', () => {
+        // both local edits and remote peers typing count as "someone's active"
+        // (sending local edits is now the provider's job)
+        markActive()
+        // an insert above someone's cursor moves their line without changing their awareness
+        refreshParticipants()
+      })
 
       // Node closed with 4404: room was deleted between /join and connecting.
       // y-websocket already stops reconnecting on 44xx codes; we just show the error.
@@ -177,18 +245,24 @@ function Room() {
       providerRef.current = null
       awarenessRef.current = null
       docRef.current = null
+      editorRef.current = null
+      refreshParticipantsRef.current = () => {}
       setReady(false)
+      setParticipants([])
     }
   }, [roomId])
 
   const handleEditorMount: OnMount = (editor) => {
     if (!docRef.current || !awarenessRef.current) return
+    editorRef.current = editor
     const ytext = docRef.current.getText('code')
     bindingRef.current = new MonacoBinding(ytext, editor.getModel()!, new Set([editor]), awarenessRef.current)
+    refreshParticipantsRef.current() // line numbers can be computed now that the model exists
   }
 
   async function handleRun() {
     setRunning(true)
+    setExitStatus('running')
     moodLockRef.current = true
     clearTimeout(idleTimerRef.current)
     setMood('thinking')
@@ -203,11 +277,13 @@ function Room() {
 
       const result = await res.json()
       setOutput({ stdout: result.stdout ?? '', stderr: result.stderr ?? '' })
+      setExitStatus({ code: result.exitCode ?? -1, timedOut: !!result.timedOut })
       if (result.stderr) {
         moodLockRef.current = false
         markActive()
       } else {
         setMood('wink') // clean run, no stderr
+        setHopSignal((s) => s + 1) // celebratory hop
         setTimeout(() => {
           moodLockRef.current = false
           markActive()
@@ -215,6 +291,7 @@ function Room() {
       }
     } catch (err) {
       setOutput({ stdout: '', stderr: 'Request failed: ' + err })
+      setExitStatus('failed')
       moodLockRef.current = false
       markActive()
     } finally {
@@ -226,14 +303,39 @@ function Room() {
     docRef.current?.getMap('metadata').set('language', newLanguage)
   }
 
-  const pillStyle = {
-    fontFamily: FONT_MONO,
-    fontSize: 13,
-    color: C.ink,
-    background: C.paper,
-    border: 'none',
-    borderRadius: 999,
-    padding: '6px 14px',
+  // --- derived display values ---
+
+  const othersPresent = participants.some((p) => !p.isYou)
+  const [statusText, statusDot] = {
+    sleepy: ['idle', C.lidTop],
+    happy: [othersPresent ? 'editing together' : 'editing', C.ok],
+    thinking: ['running', C.busy],
+    wink: ['clean run', C.ok],
+  }[mood]
+
+  const exitLabel =
+    exitStatus === 'idle' ? 'no runs yet'
+    : exitStatus === 'running' ? 'running'
+    : exitStatus === 'failed' ? 'request failed'
+    : exitStatus.timedOut ? 'timed out'
+    : `exit ${exitStatus.code}`
+  const exitColor =
+    typeof exitStatus === 'object' && !exitStatus.timedOut && exitStatus.code === 0 ? C.okDeep
+    : typeof exitStatus === 'object' || exitStatus === 'failed' ? C.mouth
+    : C.lidTop
+
+  const stdoutText = exitStatus === 'idle' && !output.stdout
+    ? 'Ready. Hit run when you want to see it go.'
+    : output.stdout
+
+  // --- styles shared by several elements ---
+
+  const monoLabel: CSSProperties = {
+    fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: 0.6,
+  }
+  const cardHeader: CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+    padding: '12px 16px', fontSize: 13, fontWeight: 800, letterSpacing: 0.3,
   }
 
   if (notFound) {
@@ -241,7 +343,13 @@ function Room() {
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
         <CodejamJarFlat mood="thinking" size={88} gaze={false} />
         <p style={{ margin: 0, fontFamily: FONT_UI, fontWeight: 700, fontSize: 18, color: C.ink }}>Room not found</p>
-        <button onClick={homeClickHandler} style={{ ...pillStyle, color: C.white, background: C.jam, cursor: 'pointer' }}>
+        <button
+          onClick={homeClickHandler}
+          style={{
+            fontFamily: FONT_MONO, fontSize: 13, color: C.white, background: C.jam,
+            border: 'none', borderRadius: 999, padding: '6px 14px', cursor: 'pointer',
+          }}
+        >
           Home
         </button>
       </div>
@@ -249,123 +357,186 @@ function Room() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: C.glass }}>
       <header
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: C.lid,
-          color: C.white,
-          padding: '8px 20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14,
+          padding: '10px clamp(12px, 2vw, 20px)', background: C.lid,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <CodejamJarFlat mood={mood} size={44} gaze={false} />
-          <span style={{ fontFamily: FONT_UI, fontWeight: 800, fontSize: 18 }}>
-            Code<span style={{ color: C.jam }}>Jam</span>
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            onClick={homeClickHandler}
-            style = {{
-              ...pillStyle,
-              color: C.white,
-              background: C.jam }}
+        {/* left: mascot tile, wordmark (links home), live status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <div
+            style={{
+              flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+              width: 52, height: 52, background: C.ink, borderRadius: 16, overflow: 'hidden',
+            }}
           >
-            Home
-          </button>
-          <button onClick={copyRoomId} title="Copy room ID" style={{ ...pillStyle, cursor: 'pointer' }}>
-            {copied ? 'Copied!' : 'Copy ID'}
-          </button>
-          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-            <select
-              value={language}
-              onChange={(e) => handleLanguageChange(e.target.value)}
+            <CodejamJarFlat mood={mood} size={46} gaze={false} hopSignal={hopSignal} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+            <button
+              onClick={homeClickHandler}
+              title="Back to home"
               style={{
-                ...pillStyle,
-                fontFamily: FONT_UI,
-                fontWeight: 700,
-                appearance: 'none',
-                cursor: 'pointer',
-                paddingRight: 28,
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
+                fontFamily: FONT_UI, fontSize: 17, fontWeight: 800, letterSpacing: -0.4, color: C.white,
               }}
             >
-              {LANGUAGES.map((lang) => (
-                <option key={lang} value={lang}>{lang}</option>
-              ))}
-            </select>
-            <svg
-              width="10"
-              height="6"
-              viewBox="0 0 10 6"
-              fill="none"
-              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              Code<span style={{ color: C.jam }}>Jam</span>
+            </button>
+            <span
+              style={{
+                ...monoLabel, display: 'flex', alignItems: 'center', gap: 6,
+                letterSpacing: 0.8, textTransform: 'uppercase', color: C.lidMuted,
+              }}
             >
-              <path d="M1 1L5 5L9 1" stroke={C.ink} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: statusDot }} />
+              {statusText}
+            </span>
           </div>
+        </div>
+
+        {/* right: room id + copy, language toggle, run */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+              background: C.ink, borderRadius: 999, padding: '5px 6px 5px 14px',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, letterSpacing: 0.5, color: C.white,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}
+            >
+              {roomId}
+            </span>
+            <button
+              onClick={copyRoomId}
+              title="Copy room ID"
+              style={{
+                flex: '0 0 auto', border: 'none', borderRadius: 999, background: C.lidMid, color: C.white,
+                fontFamily: FONT_UI, fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase',
+                padding: '6px 12px', cursor: 'pointer',
+              }}
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: C.ink, borderRadius: 999, padding: 4 }}>
+            {LANGUAGES.map((lang) => {
+              const active = lang === language
+              return (
+                <button
+                  key={lang}
+                  onClick={() => handleLanguageChange(lang)}
+                  aria-pressed={active}
+                  style={{
+                    border: 'none', borderRadius: 999, padding: '7px 14px', cursor: 'pointer',
+                    fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700,
+                    background: active ? C.paper : 'transparent', color: active ? C.ink : C.lidMuted,
+                  }}
+                >
+                  {lang}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            onClick={handleRun}
+            disabled={running}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, border: 'none', borderRadius: 14,
+              background: C.jam, color: C.white, fontFamily: FONT_UI, fontSize: 14, fontWeight: 800,
+              letterSpacing: 1, textTransform: 'uppercase', padding: '12px 22px',
+              cursor: running ? 'default' : 'pointer', boxShadow: `0 4px 0 ${C.jamDeep}`,
+            }}
+          >
+            {running ? 'Running' : 'Run'}
+          </button>
         </div>
       </header>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, padding: 20 }}>
-        <div
+      <main
+        style={{
+          flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'stretch',
+          gap: 'clamp(12px, 1.4vw, 18px)', padding: 'clamp(12px, 1.6vw, 20px)',
+        }}
+      >
+        {/* editor card */}
+        <section
           style={{
-            background: C.white,
-            borderRadius: 12,
-            padding: 8,
-            border: `1px solid ${C.glassNeck}`,
+            flex: '2.2 1 420px', minWidth: 0, display: 'flex', flexDirection: 'column',
+            background: C.white, border: `2px solid ${C.border}`, borderRadius: 20, overflow: 'hidden',
           }}
         >
-          {ready ? (
-            <Editor options={EDITOR_OPTIONS} height="420px" language={language} onMount={handleEditorMount} />
-          ) : (
-            // until the first sync; if Node is down the provider keeps retrying in the background
-            <p style={{ margin: 0, padding: 16, fontFamily: FONT_UI, fontSize: 13, color: C.ink }}>Connecting…</p>
-          )}
-        </div>
-
-        <div
-          style={{
-            background: C.paper,
-            borderRadius: 12,
-            padding: 16,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: FONT_UI, fontWeight: 700, fontSize: 13, color: C.ink }}>Console</span>
-            <button
-              onClick={handleRun}
-              disabled={running}
-              style={{
-                fontFamily: FONT_UI,
-                fontWeight: 700,
-                fontSize: 14,
-                color: C.white,
-                background: C.jam,
-                border: 'none',
-                borderRadius: 999,
-                padding: '8px 20px',
-                cursor: running ? 'default' : 'pointer',
-              }}
-            >
-              {running ? 'Running...' : 'Run'}
-            </button>
+          <div style={{ ...cardHeader, borderBottom: `2px solid ${C.divider}`, color: C.ink }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: C.jam }} />
+              solution.{FILE_EXT[language] ?? 'txt'}
+            </span>
           </div>
-          <pre style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 13, color: C.ink, whiteSpace: 'pre-wrap' }}>
-            {output.stdout}
-          </pre>
-          {output.stderr && (
-            <pre style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 13, color: C.mouth, whiteSpace: 'pre-wrap' }}>
-              {output.stderr}
-            </pre>
-          )}
-        </div>
-      </div>
+          <div style={{ flex: 1, minHeight: 340 }}>
+            {ready ? (
+              <Editor options={EDITOR_OPTIONS} height="460px" language={language} onMount={handleEditorMount} />
+            ) : (
+              // until the first sync; if Node is down the provider keeps retrying in the background
+              <p style={{ margin: 0, padding: 16, fontFamily: FONT_UI, fontSize: 13, color: C.lidTop }}>Connecting…</p>
+            )}
+          </div>
+        </section>
+
+        {/* right column: console + room panel */}
+        <section style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', minHeight: 240,
+              background: C.paper, border: `2px solid ${C.paperBorder}`, borderRadius: 20, overflow: 'hidden',
+            }}
+          >
+            <div style={{ ...cardHeader, borderBottom: `2px solid ${C.paperBorder}`, color: C.ink }}>
+              <span>Console</span>
+              <span style={{ ...monoLabel, color: exitColor }}>{exitLabel}</span>
+            </div>
+            <div style={{ flex: 1, padding: '14px 16px', overflow: 'auto' }}>
+              <pre style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 13, lineHeight: '20px', color: C.ink, whiteSpace: 'pre-wrap' }}>
+                {stdoutText}
+              </pre>
+              {output.stderr && (
+                <pre style={{ margin: '10px 0 0', fontFamily: FONT_MONO, fontSize: 13, lineHeight: '20px', color: C.mouth, whiteSpace: 'pre-wrap' }}>
+                  {output.stderr}
+                </pre>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex', flexDirection: 'column', gap: 10,
+              background: C.white, border: `2px solid ${C.border}`, borderRadius: 20, padding: '14px 16px',
+            }}
+          >
+            <span style={{ ...monoLabel, letterSpacing: 1.2, textTransform: 'uppercase', color: C.lidTop }}>
+              In this room
+            </span>
+            {participants.map((p) => (
+              <div key={p.clientId} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{p.isYou ? 'You' : p.name}</span>
+                {p.line !== null && (
+                  <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 12, color: C.lidTop }}>
+                    line {p.line}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
   )
 }

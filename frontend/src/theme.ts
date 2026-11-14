@@ -18,6 +18,14 @@ export const C = {
   ink: '#2b2630',
   mouth: '#8e1226',
   tongue: '#ff8fa0',
+  // Room UI chrome
+  lidMuted: '#b7b2c2', // secondary text on the dark lid header
+  border: '#d6e2e6', // card borders on the glass background
+  divider: '#eaf1f3', // header rule inside white cards
+  paperBorder: '#f0dcb8', // console card border
+  ok: '#6fcf5b', // status dot: editing / clean run
+  busy: '#ff9f43', // status dot: running
+  okDeep: '#3f7a2e', // "exit 0" text
 } as const
 
 export const KEYFRAMES = `
