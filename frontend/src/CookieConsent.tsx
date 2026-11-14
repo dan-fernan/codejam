@@ -1,18 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { C, FONT_UI } from './theme'
 
 export const STORAGE_KEY = 'cookieConsent'
 
 function CookieConsent() {
-    const [visible, setVisible] = useState(false)
-
-    useEffect(() => {
-        try {
-            if (!localStorage.getItem(STORAGE_KEY)) setVisible(true)
-        } catch {
-            // storage blocked — skip banner
-        }
-    }, [])
+    const [visible, setVisible] = useState(() => !localStorage.getItem(STORAGE_KEY))
 
     async function handleAllow() {
         try {

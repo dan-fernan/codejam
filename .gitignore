@@ -1,15 +1,18 @@
-# Backend (Maven/Java)
-backend/target/
-backend/.mvn/wrapper/maven-wrapper.jar
+# Spring (Maven/Java)
+backend-spring/target/
+backend-spring/.mvn/wrapper/maven-wrapper.jar
 *.class
 
 # Frontend (Node)
 frontend/node_modules/
 frontend/dist/
 
-# Sidecar (Node)
-sidecar/node_modules/
-sidecar/dist/
+# Node real-time layer
+backend-node/node_modules/
+backend-node/dist/
+
+# Catch-all, so a future rename can't commit dependencies again
+node_modules/
 .env
 
 # IDE

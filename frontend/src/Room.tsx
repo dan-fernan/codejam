@@ -271,11 +271,11 @@ function Room() {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button 
-            onClick={homeClickHandler} 
+          <button
+            onClick={homeClickHandler}
             style = {{
-              ...pillStyle, 
-              color: C.white, 
+              ...pillStyle,
+              color: C.white,
               background: C.jam }}
           >
             Home
