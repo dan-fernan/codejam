@@ -3,23 +3,20 @@ import { useParams } from 'react-router-dom'
 import { MonacoBinding } from 'y-monaco'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import * as Y from 'yjs'
-import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
+import type { Awareness } from 'y-protocols/awareness'
+import { WebsocketProvider } from 'y-websocket'
 import CodejamJarFlat, { type Mood } from './CodejamJarFlat'
 import { C, FONT_UI, FONT_MONO, flavorForClientId } from './theme'
 import { useNavigate } from 'react-router-dom'
 
 const LANGUAGES = ['python', 'javascript']
-const DOC_UPDATE = 0
-const AWARENESS_UPDATE = 1
 const IDLE_MS = 6000
 const WINK_MS = 1500
+// stable object identity: a new literal on every render makes Monaco re-apply options
+const EDITOR_OPTIONS = { padding: { top: 16 } }
 
-// necessary as response from 'GET' returns a JSON array of base64 strings, as Jackson has to text-encode the raw bytes[]
-// to get them to fit into JSON
-function base64ToBytes(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) // decode base64 string back to bytes, store in a Uint8Array (js equivalent of Java's byte[])
-}
-// Uint8Array type is necessary as input for yjs operations
+// same-origin: Vite's proxy locally, nginx in production (both strip /ws before forwarding to Node)
+const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 function Room() {
   const { roomId } = useParams()
@@ -28,10 +25,11 @@ function Room() {
   const [running, setRunning] = useState(false)
   const [ready, setReady] = useState(false)
   const [mood, setMood] = useState<Mood>('sleepy')
+  const [notFound, setNotFound] = useState(false)
   const navigate = useNavigate()
 
   const docRef = useRef<Y.Doc | null>(null)
-  const wsRef = useRef<WebSocket | null>(null)
+  const providerRef = useRef<WebsocketProvider | null>(null)
   const bindingRef = useRef<MonacoBinding | null>(null)
   const awarenessRef = useRef<Awareness | null>(null)
   const cursorStyleRef = useRef<HTMLStyleElement | null>(null)
@@ -53,22 +51,22 @@ function Room() {
 
   useEffect(() => {
     let cancelled = false
-    let heartbeat: ReturnType<typeof setInterval> | undefined
     const labelTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
     async function connect() {
-      const res = await fetch(`http://localhost:8080/rooms/${roomId}`)
-      if (!res.ok) return
-      const b64Updates: string[] = await res.json()
-      const doc = new Y.Doc()
-      if (b64Updates.length > 0) {
-        const merged = Y.mergeUpdates(b64Updates.map(base64ToBytes))
-        Y.applyUpdate(doc, merged)
-      }
-      if (cancelled) { doc.destroy(); return}
-      docRef.current = doc
+      // Records this room in recent rooms (covers Home, recents, and direct links) and confirms it exists.
+      // Content no longer comes from REST: the provider's handshake with Node delivers it.
+      const res = await fetch(`/api/rooms/${encodeURIComponent(roomId!)}/join`, { method: 'POST' })
+      if (cancelled) return
+      if (!res.ok) { setNotFound(true); return } // unknown room: never open a socket
 
-      const awareness = new Awareness(doc)
+      const doc = new Y.Doc()
+      docRef.current = doc
+      // Connects to /ws/<roomId>; runs the sync handshake, reconnects with backoff, and relays awareness
+      const provider = new WebsocketProvider(WS_URL, roomId!, doc)
+      providerRef.current = provider
+
+      const awareness = provider.awareness // created and wired to the socket by the provider
       awareness.setLocalStateField('user', {
         name: `Guest-${Math.floor(Math.random() * 1000)}`,
         color: flavorForClientId(doc.clientID),
@@ -135,64 +133,39 @@ function Room() {
       setLanguage((ymap.get('language') as string) || 'python')
       ymap.observe(() => setLanguage((ymap.get('language') as string) || 'python'))
 
-      const ws = new WebSocket(`ws://localhost:8080/ws/rooms/${roomId}`)
-      ws.binaryType = 'arraybuffer'
-      // allows incoming messages to be represented as an arraybuffer rather than an opaque blob.
-      // otherwise, would need to process the blob into something that can be applied as a yjs update directly
-      wsRef.current = ws
+      // both local edits and remote peers typing count as "someone's active"
+      // (sending local edits is now the provider's job)
+      doc.on('update', () => markActive())
 
-      function sendFramed(tag: number, payload: Uint8Array) {
-        if (ws.readyState !== WebSocket.OPEN) return
-        const framed = new Uint8Array(1 + payload.length)
-        framed[0] = tag
-        framed.set(payload, 1)
-        ws.send(framed)
-      }
-
-      ws.onmessage = (event) => {
-        const bytes = new Uint8Array(event.data)
-        const tag = bytes[0]
-        const payload = bytes.subarray(1)
-        if (tag === DOC_UPDATE) {
-          Y.applyUpdate(doc, payload, 'remote')
-        } else {
-          applyAwarenessUpdate(awareness, payload, 'remote')
-        }
-      }
-
-      doc.on('update', (update, origin) => {
-        markActive() // both local edits and remote peers typing count as "someone's active"
-        if (origin == 'remote') return
-        sendFramed(DOC_UPDATE, update)
+      // Node closed with 4404: room was deleted between /join and connecting.
+      // y-websocket already stops reconnecting on 44xx codes; we just show the error.
+      provider.on('closed', ({ code }: { code: number; reason: string }) => {
+        if (code === 4404) setNotFound(true)
       })
 
-      awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
-        if (origin === 'remote') return
-        const changed = added.concat(updated, removed)
-        sendFramed(AWARENESS_UPDATE, encodeAwarenessUpdate(awareness, changed))
+      // Show the editor once the handshake has delivered the room's content,
+      // so Monaco never binds to an empty doc and then jumps
+      provider.once('sync', (isSynced: boolean) => {
+        if (isSynced && !cancelled) setReady(true)
       })
-
-      // resend full local state periodically so late joiners (who missed the
-      // original change events) still pick up everyone's current cursor
-      heartbeat = setInterval(() => {
-        sendFramed(AWARENESS_UPDATE, encodeAwarenessUpdate(awareness, [doc.clientID]))
-      }, 10000)
-
-      setReady(true)
     }
     connect()
 
     return () => {
       cancelled = true
-      if (heartbeat) clearInterval(heartbeat)
       clearTimeout(idleTimerRef.current)
       labelTimers.forEach(clearTimeout)
       labelTimers.clear()
       cursorStyleRef.current?.remove()
-      awarenessRef.current?.destroy() // broadcasts a final "removed" state while the socket is still open
-      wsRef.current?.close()
       bindingRef.current?.destroy()
+      awarenessRef.current?.setLocalState(null) // tell peers we left while the socket is still open
+      providerRef.current?.destroy()            // closes the socket and stops reconnecting
       docRef.current?.destroy()
+      // reset so a Strict Mode remount never sees the destroyed objects
+      bindingRef.current = null
+      providerRef.current = null
+      awarenessRef.current = null
+      docRef.current = null
       setReady(false)
     }
   }, [roomId])
@@ -211,7 +184,7 @@ function Room() {
     setOutput({ stdout: '', stderr: '' })
     try {
       const code = docRef.current?.getText('code').toString() ?? ''
-      const res = await fetch('http://localhost:8080/execute', {
+      const res = await fetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json'},
         body: JSON.stringify({ code, language }),
@@ -250,6 +223,18 @@ function Room() {
     border: 'none',
     borderRadius: 999,
     padding: '6px 14px',
+  }
+
+  if (notFound) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <CodejamJarFlat mood="thinking" size={88} gaze={false} />
+        <p style={{ margin: 0, fontFamily: FONT_UI, fontWeight: 700, fontSize: 18, color: C.ink }}>Room not found</p>
+        <button onClick={homeClickHandler} style={{ ...pillStyle, color: C.white, background: C.jam, cursor: 'pointer' }}>
+          Home
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -320,8 +305,11 @@ function Room() {
             border: `1px solid ${C.glassNeck}`,
           }}
         >
-          {ready && (
-            <Editor options={{ padding: { top: 16 }}}height="420px" language={language} onMount={handleEditorMount} />
+          {ready ? (
+            <Editor options={EDITOR_OPTIONS} height="420px" language={language} onMount={handleEditorMount} />
+          ) : (
+            // until the first sync; if Node is down the provider keeps retrying in the background
+            <p style={{ margin: 0, padding: 16, fontFamily: FONT_UI, fontSize: 13, color: C.ink }}>Connecting…</p>
           )}
         </div>
 

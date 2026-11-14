@@ -51,7 +51,7 @@ function Home() {
         }
         if (consent !== 'allowed') return
 
-        fetch('http://localhost:8080/rooms/recent', { credentials: 'include' })
+        fetch('/api/rooms/recent')
             .then((res) => (res.ok ? res.json() : []))
             .then((data: RecentRoom[]) => {
                 if (!cancelled) setRecentRooms(data)
@@ -64,26 +64,19 @@ function Home() {
         }
     }, [])
 
+    // The room page records the join (POST /join on mount) and shows "not found" itself,
+    // so a recent-room click just hops and navigates
     async function handleJoinRecent(id: string) {
-        try {
-            const res = await fetch(`http://localhost:8080/rooms/${id}/join`, {
-                method: 'POST',
-                credentials: 'include',
-            })
-            if (!res.ok) return
-            setHopSignal((s) => s + 1)
-            await wait(HOP_MS)
-            navigate(`/room/${id}`)
-        } catch {
-            // ignore - user can click again
-        }
+        setHopSignal((s) => s + 1)
+        await wait(HOP_MS)
+        navigate(`/room/${id}`)
     }
 
     async function createRoom() {
         setCreating(true)
         pressJar()
         try {
-            const res = await fetch('http://localhost:8080/rooms', {
+            const res = await fetch('/api/rooms', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -104,7 +97,7 @@ function Home() {
         setJoining(true)
         setJoinError('')
         try {
-            const res = await fetch(`http://localhost:8080/rooms/${id}`)
+            const res = await fetch(`/api/rooms/${encodeURIComponent(id)}`)
             if (!res.ok) {
                 clearTimeout(moodResetTimer.current)
                 setMood('thinking')
