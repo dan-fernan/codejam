@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { WebSocketServer, type WebSocket, type RawData } from 'ws'
 import * as awarenessProtocol from 'y-protocols/awareness.js'
-import { getOrLoadRoom } from './rooms.js'
+import { getOrLoadRoom, onRoomJoined, onRoomEmpty, flushAll, rooms } from './rooms.js'
 import { handleMessage, send, syncStep1Message, awarenessMessage } from './protocol.js'
 
 const PORT = Number(process.env.PORT)
@@ -48,9 +48,14 @@ wss.on('connection', async (socket: WebSocket, req) => {
     return socket.close(1011, 'persistence unavailable') // client will reconnect and retry
   }
   if (!room) return socket.close(4404, 'room not found')
-  if (socket.readyState !== socket.OPEN) return          // client left while we were loading
+  if (socket.readyState !== socket.OPEN) {
+    // client left while we were loading
+    if (room.sockets.size === 0) onRoomEmpty(room)
+    return
+  }
 
   room.sockets.set(socket, new Set())
+  onRoomJoined(room) // cancels pending eviction if someone rejoined during the grace period
   console.log(`joined ${roomId} (${room.sockets.size} connected)`)
 
   socket.off('message', buffer)
@@ -80,8 +85,20 @@ wss.on('connection', async (socket: WebSocket, req) => {
       awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(ids), null)
     }
     console.log(`left ${roomId} (${room.sockets.size} connected)`)
-    // step 5: grace timer → flush → evict
+    if (room.sockets.size === 0) onRoomEmpty(room) // grace timer -> flush -> evict
   })
 })
+
+async function shutdown(signal: string) {
+  console.log(`${signal}: flushing ${rooms.size} room(s) before exit`)
+  setTimeout(() => process.exit(1), 10_000).unref() // hard limit if Spring hangs, makes sure timer can't keep Node alive
+  clearInterval(heartbeat)
+  for (const socket of wss.clients) socket.close(1012, 'server restarting') // clients will reconnect
+  wss.close() // stop accepting new connections
+  await flushAll()
+  process.exit(0)
+}
+process.once('SIGTERM', () => void shutdown('SIGTERM'))
+process.once('SIGINT', () => void shutdown('SIGINT')) // Ctrl + C
 
 console.log(`real-time layer listening on :${PORT}`)

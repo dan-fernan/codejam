@@ -62,7 +62,6 @@ export function handleMessage(room: Room, socket: WebSocket, data: RawData): voi
 // Registered once per room, when it's created in getOrLoadRoom
 export function attachRoomListeners(room: Room): void {
   room.doc.on('update', (update: Uint8Array, origin: unknown) => {
-    room.dirty = true                                   // step 5 hooks the flush timer in here
 
     const encoder = encoding.createEncoder()
     encoding.writeVarUint(encoder, MESSAGE_SYNC)
