@@ -74,4 +74,9 @@ public class RoomRepository {
             "UPDATE rooms SET bytes = ?, updated_at = now() WHERE id = ?", bytes, roomId);
         return updated > 0;
     }
+
+    public boolean roomExists(String roomId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM rooms WHERE id = ?)", Boolean.class, roomId));
+    }
 }

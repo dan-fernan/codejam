@@ -8,7 +8,7 @@ function CookieConsent() {
 
     async function handleAllow() {
         try {
-            await fetch('http://localhost:8080/session', { method: 'POST', credentials: 'include'})
+            await fetch('/api/session', { method: 'POST' })
         } finally {
             try { localStorage.setItem(STORAGE_KEY, 'allowed') } catch { /* ignore */ }
             setVisible(false)

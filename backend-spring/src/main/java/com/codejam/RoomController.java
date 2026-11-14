@@ -68,11 +68,8 @@ public class RoomController {
     }
 
     @GetMapping("/rooms/{id}")
-    public ResponseEntity<List<byte[]>> getRoom(@PathVariable String id) {
-        if (!service.roomExists(id)) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(service.getUpdates(id));
+    public ResponseEntity<Void> getRoom(@PathVariable String id) {
+        return service.roomExists(id) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
     @GetMapping("/rooms/recent")

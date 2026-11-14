@@ -19,4 +19,19 @@ export default defineConfig({
       ),
     },
   },
+  server: {
+    proxy: {
+      // REST -> Spring. /api/rooms/recent -> http://localhost:8080/rooms/recent
+      '/api': {
+        target: 'http://localhost:8080',
+        rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      // WebSockets -> Node. ws://localhost:5173/ws/<roomId> -> ws://localhost:1234/<roomId>
+      '/ws': {
+        target: 'ws://localhost:1234',
+        ws: true,                                   // forward WS upgrade, not just plain HTTP
+        rewrite: (path) => path.replace(/^\/ws/, '')
+      }
+    }
+  }
 })
