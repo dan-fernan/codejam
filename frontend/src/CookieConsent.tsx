@@ -4,7 +4,13 @@ import { C, FONT_UI } from './theme'
 export const STORAGE_KEY = 'cookieConsent'
 
 function CookieConsent() {
-    const [visible, setVisible] = useState(() => !localStorage.getItem(STORAGE_KEY))
+  const [visible, setVisible] = useState(() => {
+    try {
+      return !localStorage.getItem(STORAGE_KEY)
+    } catch {
+      return false // storage blocked: skip banner to prevent crashing the page
+    }
+  })
 
     async function handleAllow() {
         try {

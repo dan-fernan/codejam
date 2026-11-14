@@ -26,6 +26,7 @@ function Room() {
   const [ready, setReady] = useState(false)
   const [mood, setMood] = useState<Mood>('sleepy')
   const [notFound, setNotFound] = useState(false)
+  const [copied, setCopied] = useState(false)
   const navigate = useNavigate()
 
   const docRef = useRef<Y.Doc | null>(null)
@@ -37,6 +38,16 @@ function Room() {
   // typing activity from stomping on that mood until it's done
   const moodLockRef = useRef(false)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  async function copyRoomId() {
+    try {
+      await navigator.clipboard.writeText(roomId!)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // clipboard blocked (permission denied, or not a secure context): nothing to show
+    }
+  }
 
   const homeClickHandler = () => {
     navigate('/')
@@ -265,7 +276,9 @@ function Room() {
           >
             Home
           </button>
-          <span style={pillStyle}>{roomId}</span>
+          <button onClick={copyRoomId} title="Copy room ID" style={{ ...pillStyle, cursor: 'pointer' }}>
+            {copied ? 'Copied!' : 'Copy ID'}
+          </button>
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <select
               value={language}
