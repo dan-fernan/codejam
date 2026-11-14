@@ -5,7 +5,12 @@ import { getOrLoadRoom, onRoomJoined, onRoomEmpty, flushAll, rooms } from './roo
 import { handleMessage, send, syncStep1Message, awarenessMessage } from './protocol.js'
 
 const PORT = Number(process.env.PORT)
-const wss = new WebSocketServer({ port: PORT })
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN // http://localhost:5173 locally, https://codejam.dev in prod
+const wss = new WebSocketServer({
+  port: PORT,
+  // runs before handshake completes
+  verifyClient: ({ origin }: { origin?: string }) => origin === undefined || origin === FRONTEND_ORIGIN,
+})
 
 const HEARTBEAT_MS = 15_000
 const alive = new WeakSet<WebSocket>() // sockets that answered since last ping
